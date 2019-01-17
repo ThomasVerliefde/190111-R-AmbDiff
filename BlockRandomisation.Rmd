@@ -1,7 +1,7 @@
 ---
-  Title:  "BlockRandomisation RelAmb"
+  Title:  "BlockRandomisation AmbDiff01"
   Author: "Thomas Verliefde"
-  Date:   "2018-12-14""
+  Date:   "2019-01-17""
   Output: html_document
 ---
 
@@ -13,7 +13,7 @@ library(magrittr)
 
 combinat::permn(c(0,1,2,3)) %>%
   unique %T>%
-  {set.seed(20181001)} %>%
+  {set.seed(20190111)} %>%
   sample(
     size = 500,
     replace = T
