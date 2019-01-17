@@ -60,21 +60,15 @@ bawlR %>% group_by(WORD_CLASS) %>% summarize(min(EMO_MEAN),max(EMO_MEAN),sd(EMO_
 
 ```{r previously used stims, options}
 
-nounsPos <- c("mut", "lust", "glück", "freude")
-nounsNeg <- c("leid", "ärger", "furcht", "trauer")
-
-adjPos <- c("frei", "klug", "treu", "gesund", "beliebt", "ehrlich", "herzlich", "friedlich")
-adjNeg <- c("blöd", "dumm", "fies", "brutal", "grausam", "neidisch", "peinlich", "widerlich")
+nounsAmb <- c("karriere","regulierung","arztbesuch","protest","alkohol","feuer","smartphone","stolz")
 
 old <- bawlR %>% filter(
-  WORD_LOWER %in% c(nounsPos,nounsNeg,adjPos,adjNeg)
-) %>% mutate(
-  VAL = case_when(
-    EMO_MEAN < 0 ~ 'Neg',
-    EMO_MEAN > 0 ~ 'Pos'
-  )
+  WORD_LOWER %in% c(nounsAmb)
 )
 ```
+
+Note, 5 ambivalent words previously used by Berger are in the BAWLR, 3 are not.
+
 
 ```{r old, options}
 
@@ -82,47 +76,34 @@ old %>% select(WORD,`Ftot/1MIL`) %>% arrange(`Ftot/1MIL`)
 
 # "Neidisch" only has a Ftot/1MIL of 2, while the others are all >= 14
 
-old %>% filter(`Ftot/1MIL` >= 10) %>% group_by(VAL) %>% summarize(
-  mean(EMO_MEAN),max(EMO_MEAN),min(EMO_MEAN),sd(EMO_MEAN),
-  mean(AROUSAL_MEAN),max(AROUSAL_MEAN),min(AROUSAL_MEAN),sd(AROUSAL_MEAN),
-  mean(`Ftot/1MIL`),max(`Ftot/1MIL`),min(`Ftot/1MIL`),sd(`Ftot/1MIL`)
-) %>% t
-  
+old %>% select(WORD,EMO_MEAN,AROUSAL_MEAN,`Ftot/1MIL`,LETTERS) %>% t
+
 
 ```
 
+In total (including the words we do not have in the BAWLR),
+we will select 8 matching nounPos and 8 matching nounNeg (on letters and frequency).
+-> Letters: 5,5,7,7,8,10,10,11
+
+
 ```{r selecting items, options}
-
-adjPos <- bawlR %>% filter(
-  WORD_CLASS == "ADJ",
-  EMO_MEAN >= 2,
-  `Ftot/1MIL` >= 10
-) %T>% {
-  count(.,LETTERS) %>% print
-}
-
-adjNeg <- bawlR %>% filter(
-  WORD_CLASS == "ADJ",
-  EMO_MEAN <= -2,
-  `Ftot/1MIL` >= 10
-) %T>% {
-  count(.,LETTERS) %>% print
-}
 
 nounPos <- bawlR %>% filter(
   WORD_CLASS == "NOUN",
   EMO_MEAN >= 2,
-  `Ftot/1MIL` >= 30
+  `Ftot/1MIL` >= 10,
+  `Ftot/1MIL` <= 80
 ) %T>% {
-  count(.,LETTERS) %>% print
+  count(.,LETTERS) %>% t %>% print
 }
 
 nounNeg <- bawlR %>% filter(
   WORD_CLASS == "NOUN",
   EMO_MEAN <= -2,
-  `Ftot/1MIL` >= 30
+  `Ftot/1MIL` >= 10,
+  `Ftot/1MIL` <= 80
 ) %T>% {
-  count(.,LETTERS) %>% print
+  count(.,LETTERS) %>% t %>% print
 }
 ```
 
@@ -140,7 +121,7 @@ As we have 4 SOs, each will get 1 matching length random letter string, and 1 ma
 
 # Strings of different sizes
 
-set.seed(20181001)
+set.seed(20190111)
 lapply(
   2:9,
   function (x) {
