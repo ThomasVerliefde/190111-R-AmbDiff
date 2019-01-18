@@ -241,6 +241,9 @@ targetNeg <- adjNeg %>%
 
 # All identical to impamb2's practice words
 
+paste("Arbeit","Machte","Diät",collapse = " ") %>%
+  writeLines("Stimuli/practicePrime_Amb.txt",sep="")
+
 paste("Kuss","Idee","Chance",collapse = " ") %>%
   writeLines("Stimuli/practicePrime_Pos.txt",sep="")
 
