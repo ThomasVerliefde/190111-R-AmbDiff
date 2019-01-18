@@ -1,7 +1,7 @@
 ---
 title: "BAWL-R Stimuli Selection"
 author: "Thomas Verliefde"
-date: "2019-01-17"
+date: "2019-01-18"
 output: html_document
 ---
 
@@ -68,31 +68,49 @@ old <- bawlR %>% filter(
 ```
 
 Note, 5 ambivalent words previously used by Berger are in the BAWLR, 3 are not.
+But, both "arzt" and "besuch" are available (while "arztbesuch" is not)
 
 
 ```{r old, options}
 
 old %>% select(WORD,`Ftot/1MIL`) %>% arrange(`Ftot/1MIL`)
 
-# "Neidisch" only has a Ftot/1MIL of 2, while the others are all >= 14
-
 old %>% select(WORD,EMO_MEAN,AROUSAL_MEAN,`Ftot/1MIL`,LETTERS) %>% t
 
+bawlR %>% filter(WORD == "ARZT" | WORD == "BESUCH") %>%
+  select(WORD,EMO_MEAN,AROUSAL_MEAN,`Ftot/1MIL`,LETTERS) %>% t
 
 ```
 
-In total (including the words we do not have in the BAWLR),
-we will select 8 matching nounPos and 8 matching nounNeg (on letters and frequency).
--> Letters: 5,5,7,7,8,10,10,11
+We will select 6 ambivalent words (the 5 available in the bawlR & "arztbesuch")
+we will select 6 matching nounPos and 6 matching nounNeg (on letters and frequency).
+-> Letters: 5,5,7,7,8,10
 
 
 ```{r selecting items, options}
+
+adjPos <- bawlR %>% filter(
+  WORD_CLASS == "ADJ",
+  EMO_MEAN >= 2,
+  `Ftot/1MIL` >= 10
+) %T>% {
+  count(.,LETTERS) %>% print
+}
+
+adjNeg <- bawlR %>% filter(
+  WORD_CLASS == "ADJ",
+  EMO_MEAN <= -2,
+  `Ftot/1MIL` >= 10
+) %T>% {
+  count(.,LETTERS) %>% print
+}
 
 nounPos <- bawlR %>% filter(
   WORD_CLASS == "NOUN",
   EMO_MEAN >= 2,
   `Ftot/1MIL` >= 10,
-  `Ftot/1MIL` <= 80
+  `Ftot/1MIL` <= 80,
+  (LETTERS == 5 | LETTERS == 7 | LETTERS == 8 | LETTERS == 10)
 ) %T>% {
   count(.,LETTERS) %>% t %>% print
 }
@@ -101,7 +119,8 @@ nounNeg <- bawlR %>% filter(
   WORD_CLASS == "NOUN",
   EMO_MEAN <= -2,
   `Ftot/1MIL` >= 10,
-  `Ftot/1MIL` <= 80
+  `Ftot/1MIL` <= 80,
+  (LETTERS == 5 | LETTERS == 7 | LETTERS == 8 | LETTERS == 10)
 ) %T>% {
   count(.,LETTERS) %>% t %>% print
 }
@@ -111,43 +130,27 @@ nounNeg <- bawlR %>% filter(
 # Selecting/Creating Primes and Targets for Experiment and Practice #
 #####################################################################
 
-We will have multiple sets of primes, to match for name length of the significant others.
-As we have 4 SOs, each will get 1 matching length random letter string, and 1 matching length valenced prime (pos|neg).
-
-
 ```{r creating random letter strings textfiles, options}
 
 "Stimuli" %>% dir.create(showWarnings = FALSE)
 
 # Strings of different sizes
 
-set.seed(20190111)
-lapply(
-  2:9,
+set.seed(20190111); lapply(
+  c(5,5,7,7,8,10)-1,
   function (x) {
-    replicate(
-      4,
       sample(LETTERS[-c(1,5,9,15,21,25)],1) %>% paste0(
         sample(letters[-c(1,5,9,15,21,25)],x, replace=FALSE) %>% paste(collapse="")
       )
-      ,
-      simplify = FALSE
-    )
   }
 ) %>% unlist %>% paste(collapse=" ") %>% writeLines("Stimuli/experimentPrime_Str.txt",sep="")
 
-
-set.seed(20181001); lapply(
-  c(4,6),
+set.seed(20190111); lapply(
+  c(5,7),
   function (x) {
-    replicate(
-      1,
       sample(LETTERS[-c(1,5,9,15,21,25)],1) %>% paste0(
         sample(letters[-c(1,5,9,15,21,25)],x, replace=FALSE) %>% paste(collapse="")
       )
-      ,
-      simplify = FALSE
-    )
   }
 ) %>% unlist %>% paste(collapse=" ") %>% writeLines("Stimuli/practicePrime_Str.txt",sep="")
 
@@ -158,52 +161,53 @@ set.seed(20181001); lapply(
 
 "Stimuli" %>% dir.create(showWarnings = F)
 
-primePos <- nounPos %>% filter(LETTERS == 3 | LETTERS == 4) %>%
+primeAmb <- old %>% arrange(LETTERS) %>%
+  add_row(WORD_LOWER = "arztbesuch", LETTERS = 10) %T>%
+  {paste(.$WORD_LOWER,collapse=" ") %>% str_to_title %>%
+      writeLines("Stimuli/experimentPrime_Amb.txt",sep="")}
+  
+primePos <- nounPos %>% filter(LETTERS == 5) %>%
   filter(
-    WORD == "MUT" |
-      WORD == "LUST"
+    WORD == "BLUME" |
+      WORD == "HUMOR"
   ) %>% full_join(
-    nounPos %>% filter(LETTERS == 5 | LETTERS == 6) %>%
+    nounPos %>% filter(LETTERS == 7) %>%
       filter(
-        WORD == "GLÜCK" |
-          WORD == "FREUDE"
+        WORD == "KOMFORT" |
+          WORD == "TRIUMPH"
       ),by = vars_select(names(.),everything())
   ) %>% full_join(
-    nounPos %>% filter(LETTERS == 7 | LETTERS == 8) %>%
+    nounPos %>% filter(LETTERS == 8) %>%
       filter(
-        WORD == "FRIEDEN" |
-          WORD == "HOFFNUNG"
+        WORD == "FREIZEIT"
       ),by = vars_select(names(.),everything())
   ) %>% full_join(
-    nounPos %>% filter(LETTERS == 9 | LETTERS == 10) %>%
+    nounPos %>% filter(LETTERS == 10) %>%
       filter(
-        WORD == "VERTRAUEN" |
-          WORD == "WOCHENENDE"
+        WORD == "LANDSCHAFT"
       ),by = vars_select(names(.),everything())
   ) %>% arrange(LETTERS) %T>% {paste(.$WORD_LOWER,collapse=" ") %>% str_to_title %>%
       writeLines("Stimuli/experimentPrime_Pos.txt",sep="")}
 
-primeNeg <- nounNeg %>% filter(LETTERS == 3 | LETTERS == 4) %>%
+primeNeg <- nounNeg %>% filter(LETTERS == 5) %>%
   filter(
-    WORD == "NOT" |
-      WORD == "LEID"
+    WORD == "FEIND" |
+      WORD == "RACHE"
   ) %>% full_join(
-    nounNeg %>% filter(LETTERS == 5 | LETTERS == 6) %>%
-      filter(
-        WORD == "FEIND" |
-          WORD == "STREIT"
-      ),by = vars_select(names(.),everything())
-  ) %>% full_join(
-    nounNeg %>% filter(LETTERS == 7 | LETTERS == 8) %>%
+    nounNeg %>% filter(LETTERS == 7) %>%
       filter(
         WORD == "DROHUNG" |
-          WORD == "ABSCHIED"
+          WORD == "DEFIZIT"
       ),by = vars_select(names(.),everything())
   ) %>% full_join(
-    nounNeg %>% filter(LETTERS == 9 | LETTERS == 10) %>%
+    nounNeg %>% filter(LETTERS == 8) %>%
       filter(
-        WORD == "GEFÄNGNIS" |
-          WORD == "VERBRECHEN"
+        WORD == "ABSCHIED" 
+      ),by = vars_select(names(.),everything())
+  ) %>% full_join(
+    nounNeg %>% filter(LETTERS == 10) %>%
+      filter(
+        WORD == "VERBRECHEN"
       ),by = vars_select(names(.),everything())
   ) %>% arrange(LETTERS) %T>% {paste(.$WORD_LOWER,collapse=" ") %>% str_to_title %>%
       writeLines("Stimuli/experimentPrime_Neg.txt",sep="")}
