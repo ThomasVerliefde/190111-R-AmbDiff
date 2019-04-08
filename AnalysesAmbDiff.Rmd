@@ -35,12 +35,11 @@ lapply(
 temp <- tempdir()
 df_raw <- "Data_AmbDiff.zip" %>% {
   ldply(
-    .data = unzip(.,list=T) %>%
-      arrange(Date) %$%
+    .data = unzip(.,list=T) %$%
       grep("(.csv)$",Name,value=TRUE),
     .fun = function(x) unzip(.,files=x,exdir=temp) %>%
       read_csv
-  )
+  ) %>% as_tibble %>% arrange(Subject)
 }
 rm(temp)
 
@@ -48,9 +47,10 @@ rm(temp)
 
 ```{r !, options}
 
+# utils::View(df_raw)
 seq(1,80) %in% df_raw$Subject %>% not %>% which
 "Data_AmbDiff.zip" %>% unzip(list=T) %>% arrange(Date) %>%
-  filter(grepl("(.csv)$",.$Name)) %>% extract(44:50,)
+  filter(grepl("(.csv)$",.$Name)) %>% extract(44:50,c(1,3))
 
 ```
 
@@ -58,6 +58,33 @@ Participant 48's data is missing ...
 
 Comments from during data collection:
 *Subject 20 was remarkably quick
-*Subject 44 stated to already know the experiment
-*Subject 59 stated to already know the experiment
+*Subject 44 stated to already know the experiment - will be excluded
+*Subject 59 stated to already know the experiment - will be excluded
 *Subject 60 had to restart the experiment once
+
+```{r df, options}
+
+df <- df_raw %>%
+  select(
+    grep("(^time)|(hostName)|(Primes$)|(Trials$)",colnames(.),invert=TRUE)
+  ) %>%
+  gather(
+    key = "key",
+    value = "value",
+    grep("(^practice)|(^experiment)",colnames(.))
+  ) %>%
+  separate(
+    key,
+    c("Exp","key"),
+    sep="_",
+    extra = "merge"
+  ) %>%
+  separate(
+    key,
+    c("Block","Trial","key"),
+    sep="_",
+    fill="left"
+  )
+
+# utils::View(df)
+```
