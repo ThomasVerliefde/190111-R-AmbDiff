@@ -1,0 +1,37 @@
+---
+Author: Thomas Verliefde
+Date: '2019-04-08'
+Output: html_document
+Title: Analyses AmbDiff
+editor_options:
+  chunk_output_type: console
+version: '0.1'
+---
+
+TODO: Check all variables whether they are what they should be (factor, numeric, ...)
+TODO: Additional analysis with control variables (keyfirst, otherfirst, gender, ...)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+# load("20190319.RData")
+```
+
+```{r libraries, include=FALSE}
+lapply(
+  c("plyr","dplyr","tidyr","ggplot2","readxl","readr","lme4","afex","lmerTest",
+    "emmeans","purrr","magrittr","cowplot"),
+  require,
+  character.only = T
+)
+```
+
+##################
+# Data Wrangling #
+##################
+
+```{r import, options}
+
+
+
+```
