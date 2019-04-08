@@ -32,6 +32,32 @@ lapply(
 
 ```{r import, options}
 
-
+temp <- tempdir()
+df_raw <- "Data_AmbDiff.zip" %>% {
+  ldply(
+    .data = unzip(.,list=T) %>%
+      arrange(Date) %$%
+      grep("(.csv)$",Name,value=TRUE),
+    .fun = function(x) unzip(.,files=x,exdir=temp) %>%
+      read_csv
+  )
+}
+rm(temp)
 
 ```
+
+```{r !, options}
+
+seq(1,80) %in% df_raw$Subject %>% not %>% which
+"Data_AmbDiff.zip" %>% unzip(list=T) %>% arrange(Date) %>%
+  filter(grepl("(.csv)$",.$Name)) %>% extract(44:50,)
+
+```
+
+Participant 48's data is missing ...
+
+Comments from during data collection:
+*Subject 20 was remarkably quick
+*Subject 44 stated to already know the experiment
+*Subject 59 stated to already know the experiment
+*Subject 60 had to restart the experiment once
