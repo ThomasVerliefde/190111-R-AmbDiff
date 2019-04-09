@@ -1,6 +1,6 @@
 ---
 Author: Thomas Verliefde
-Date: '2019-04-08'
+Date: '2019-04-09'
 Output: html_document
 Title: Analyses AmbDiff
 editor_options:
@@ -30,7 +30,7 @@ lapply(
 # Data Wrangling #
 ##################
 
-```{r import, options}
+```{r import, cache=FALSE}
 
 temp <- tempdir()
 df_raw <- "Data_AmbDiff.zip" %>% {
@@ -84,7 +84,100 @@ df <- df_raw %>%
     c("Block","Trial","key"),
     sep="_",
     fill="left"
+  ) %>%
+  spread(
+    key,
+    value
+  ) %>%
+  arrange(
+    Subject,Block,as.numeric(Trial)
+  ) %>%
+  mutate(
+    Subject = Subject %>% as.factor
+  ) %>%
+  group_by(
+    Subject
+  ) %>%
+  mutate(
+    Gender = recode(
+      Gender,
+      "weiblich" = "Female",
+      "männlich" = "Male",
+      .default = "Other"
+    ),
+    Language = recode(
+      Language,
+      "Deutsch" = "German",
+      "Sonstiges" = "Other"
+    ),
+    Handedness = recode(
+      Handedness,
+      "rechts" = "Right",
+      "links" = "Left",
+      "beide" = "Both"
+    ),
+    Block = Block %>% as.factor,
+    Trial = Trial %>% as.numeric,
+    Response = case_when(
+      answer == 'Y' & Key == 'Yneg' ~ 'Negative',
+      answer == 'OemMinus' & Key == 'Ypos' ~ 'Negative',
+      TRUE ~ 'Positive'
+    ),
+    primeCat = recode(
+      primeCat,
+      "0" = "Ambivalent",
+      "1" = "Positive",
+      "2" = "Negative",
+      "3" = "Neutral"
+    ),
+    targetCat = recode(
+      targetCat,
+      "0" = "Positive",
+      "1" = "Negative"
+    ),
+    RT = time %>% as.numeric,
+    logRT = log(RT),
+    Correct = Response == targetCat,
+    Accuracy = mean(Correct),
+    speedIncl = (RT >= 300 & RT <= 3000),
+    #Trials with latencies smaller than 300ms or larger than 3000ms were excluded.
+    accIncl = (1 - mean(speedIncl)) < 0.83,
+    ruleIncl = (Subject %in% c(44,59,60)) %>% not,
+    subjIncl = accIncl & ruleIncl,
+    trialIncl = Correct & speedIncl,
+    Inclusion = trialIncl & subjIncl
+  ) %>%
+  select(
+    everything(),
+    answerCode = answer,
+    Prime = prime,
+    Target = target,
+    -time
   )
 
 # utils::View(df)
 ```
+
+```{r subsets, options}
+
+df_sub <- df %>%
+  distinct(
+    Subject,Age,Gender,Language,Handedness,Study
+  )
+
+df_practice <- df %>%
+  filter(Exp == "practice") %>%
+  select(
+    Subject,Key,Trial
+  )
+
+df_exp <- df %>%
+  filter(Exp == "experiment") %>%
+  select(
+    Subject,Key,Block,Trial
+  )
+
+
+
+```
+
