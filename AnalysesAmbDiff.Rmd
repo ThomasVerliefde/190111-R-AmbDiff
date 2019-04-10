@@ -141,7 +141,7 @@ df <- df_raw %>%
     Accuracy = mean(Correct),
     speedIncl = (RT >= 300 & RT <= 3000),
     #Trials with latencies smaller than 300ms or larger than 3000ms were excluded.
-    accIncl = (1 - mean(speedIncl)) < 0.83,
+    accIncl = (1 - mean(speedIncl & Correct)) < 0.83,
     ruleIncl = (Subject %in% c(44,59,60)) %>% not,
     subjIncl = accIncl & ruleIncl,
     trialIncl = Correct & speedIncl,
@@ -153,7 +153,7 @@ df <- df_raw %>%
     Prime = prime,
     Target = target,
     -time
-  )
+  ) %>% ungroup
 
 # utils::View(df)
 ```
@@ -162,7 +162,7 @@ df <- df_raw %>%
 
 df_sub <- df %>%
   distinct(
-    Subject,Age,Gender,Language,Handedness,Study
+    Subject,Age,Gender,Language,Handedness,Study,Key,Accuracy,accIncl,ruleIncl,subjIncl
   )
 
 df_practice <- df %>%
@@ -181,3 +181,27 @@ df_exp <- df %>%
 
 ```
 
+################
+# Demographics #
+################
+
+```{r exclusions, options}
+
+df_sub %>%
+  filter(accIncl %>% not) %>%
+  nrow %>%
+  paste("participants were excluded due to extremes in accuracy and/or latency.")
+
+df_sub %>%
+  filter(ruleIncl %>% not) %>%
+  nrow %>%
+  paste("participants were excluded due to issues during data collection.")
+# 2 participants indicated to have already performed the experiment before.
+# 1 participant had to restart the program during experimentation.
+
+df_sub %>%
+  filter(subjIncl) %>%
+  nrow %>%
+  paste("participants were included for the analyses.")
+  
+```
