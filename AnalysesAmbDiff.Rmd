@@ -14,7 +14,8 @@ TODO: Additional analysis with control variables (keyfirst, otherfirst, gender, 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 rm(list=ls())
-# load("20190319.RData")
+load("20190411.RData")
+save.image(file="20190411.RData")
 ```
 
 ```{r libraries, include=FALSE}
@@ -165,19 +166,12 @@ df_sub <- df %>%
     Subject,Age,Gender,Language,Handedness,Study,Key,Accuracy,accIncl,ruleIncl,subjIncl
   )
 
-df_practice <- df %>%
-  filter(Exp == "practice") %>%
-  select(
-    Subject,Key,Trial
-  )
-
-df_exp <- df %>%
+df_trials <- df %>%
   filter(Exp == "experiment") %>%
   select(
-    Subject,Key,Block,Trial
+    Subject,Key,Age,Gender,Block,Trial,Prime,primeCat,Target,targetCat,Response,RT,logRT,
+    Correct,Accuracy,speedIncl,accIncl,ruleIncl,subjIncl,trialIncl,Inclusion
   )
-
-
 
 ```
 
@@ -185,7 +179,7 @@ df_exp <- df %>%
 # Demographics #
 ################
 
-```{r exclusions, options}
+```{r subj excl, options}
 
 df_sub %>%
   filter(accIncl %>% not) %>%
@@ -203,5 +197,66 @@ df_sub %>%
   filter(subjIncl) %>%
   nrow %>%
   paste("participants were included for the analyses.")
-  
+
 ```
+
+```{r trial excl, options}
+
+df_trials %>%
+  filter(subjIncl) %$%
+  mean(Correct) %>%
+  subtract(1,.) %>%
+  multiply_by(100) %>%
+  signif(2) %>%
+  paste0("% of trials from included participants were incorrectly categorised.")
+
+df_trials %>%
+  filter(subjIncl) %$%
+  mean(speedIncl) %>%
+  subtract(1,.) %>%
+  multiply_by(100) %>%
+  signif(2) %>%
+  paste0("% of trials from included participants were responded to either too quickly (<300ms) or too slowly (>3000ms)")
+
+df_trials %>%
+  filter(subjIncl) %$%
+  mean(trialIncl) %>%
+  multiply_by(100) %>%
+  signif(2) %>%
+  paste0("% of trials from included participants were ultimately included, based on speed and accuracy.")
+
+```
+
+
+
+############
+# Analyses #
+############
+
+################
+## Multilevel ##
+################
+
+```{r multilevel, options}
+
+afex::set_effects_contrasts()
+fit_multi <- df_trials %>%
+  filter(Inclusion) %>%
+  mixed(
+    logRT ~ primeCat * targetCat + (1|Prime) + (1|Target) + (1|Subject),
+    data = .,
+    method='S'
+  )
+
+
+
+```
+
+###############
+## Diffusion ##
+###############
+
+```{r label, options}
+
+```
+
