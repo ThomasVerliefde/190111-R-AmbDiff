@@ -448,11 +448,13 @@ ggCongrFit <- emmCongrFit %>%
     Congruency = Congruency %>% factor(levels = c("Ambivalent","Congruent","Incongruent","Neutral"))
   ) %>%
   ggplot(
-    aes(y = RT, ymin = minRT, ymax = maxRT, x = Congruency)
+    aes(y = RT, ymin = minRT, ymax = maxRT, x = Congruency, fill = Congruency)
   ) +
-  geom_col(position = position_dodge2()) +
+  geom_col(position = position_dodge2(),width = .8) +
   geom_errorbar(width=.3) +
   labs(x = "Prime Conditions", y = "Reaction Times (ms)") +
+  scale_fill_manual(values=c("orange","limegreen","red2","grey50")) +
+  guides(fill=FALSE) +
   theme(
     plot.margin = unit(c(1.4,0.4,0.4,0.4),"cm")
   ) +
@@ -524,28 +526,53 @@ The response-time constant (t0) captures activation and execution of the correct
   As elaborated above, we expect that all types of response priming designs are primarily based on Stroop-like interference processes. We assume that such interference processes operate at the stage of response execution. According to this account, a prime from the same category as a following target might pre-activate the corresponding motor-response program. In this case, the primed response can be executed faster. IF the prime belongs to the alternative response category, the execution of the correct response to the target should be slowed down due to response interference. Since these effects operate independently of the identification and classification of the target, they will be mapped onto the non-decisional RT component of the diffusion model. The non-decisional component shoulde either be generally reduced by a categorical match between prime and target (lower values on t0), or, more specifically, the primes should reduce/increase the time that is need in order to execute the matching/non-matching response, leading to positive/negative values for d in case of congruent/incongruent primes
   Another possibility that cannot be ruled out a priori is that response priming effects influence the response selection process by biasing the deciison process in the direction of the prime category. Such an effect would be mapped by the diffusion model on the starting point (z). As already mentioned above, we cannot estimate priming effects on t0, d, and z simultaneously (Voss et al. 2010). We therefore decided to estimate models with two non-decisional components (t0 and d) in which the starting point was fixed, but we also conducted additional analyses in which the starting point was estimated freely.
 
-
-Experiment 1b: affective priming in the evaluation task
-Experiment 2a: affective congruency of prime-target pairs.
-
+##############################################################
+### Experiment 1b: affective priming in the evaluation task
+##############################################################
 
 For experiment 1b, 48 positive and 48 negative German adjectives were used as targets. 48 positive and 48 negative nouns were used as primes. Prime-target pairs were constructed by assigning one congruent prime, one incongruent prime, and one neutral letter string prime to each target. Each prime word was used as congruent prime for one target and as incongruent prime for another target. Pairings were identical for all participants.
 The only theoretically relevant factor was prime type: affectively congruent, affectively incongruent, neutral.
 
 Data pre-treatment.
   Speed instructions and rewarding of speeded responses were used to evoke a high error rate. However, the logic of payoffs seemed to have encouraged participants to make fast guesses in some trials to maximize the chance of winning the performance related reward. Accordingly, there was a large amount of fast outlier latencies which can bias parameter estimates from a diffusion model analysis. Therefore, a three-step procedure to identify outliers was performed: First, all latencies below 200ms were excluded. Second, latencies were eliminated starting from the lower edge of the individual RT distributions until the number of removed correct responses exceeded the number of removed error responses by 3. This was done to exclude latencies that were based on pure guessing. Third, from the remaining individual latency distributions values below the first quartile minus 1.5 inter-quartile-ranges were eliminated, and similar for values above the third quartiel plus 1.5 inter-quartile-ranges. This procedure led to an exclusion of 7.3% of trials.
-
-```{r Mixed Exp 1b, options}
-
-df %>%
-  filter(Inclusion) %>%
-  summarize()
   
+Contrast between congruent and incongruent trials was significant.
+Error rates did not differe significantly between congruent and incongruent trials.
 
+The three parameters that were allowed to vary between prime types (v, t0, and d) were entered in separate repeated measurement ANOVAs.
+In experiment 1b, prime type did not influence the drift rates. However, there was a significant effect on the RT constant (t0). Planned contrasts revealed that the non-decisional processes were faster in trials with congruent primes compared to trials with incongruent primes. The analysis of the d-paramtere failed to reach statistical significance.
+
+Fit-indices (p) provided by fast-dm are the probabilities of the Kolmogorov-Smirnov-statistic, that is, they are measures for deviances of the empirical from the predicted RT distributions. In our case, the presented p values represent the product of the three different p values based on the comparison of empirical and predicted distributions for the three priming conditions. Although p cannot be interpreted as the exact probability of a statistical test it is nonetheless obvious that the values are very close to 1, indicating that the empirical distributions are reproduced very closely by the predicted distributions.
+
+In experiment 1b the evalutation task was used to demonstrate an affective priming effect.
+Affective priming effects with the evaluative decision task were based on differences in the non-decisional components (t0), indicating that response execution in the evaluation task was faster following congruent than incongruent primes. This finding fits with the response facilitation/interference account of affective priming effects in the evaluation task. According to this idea, the processing of the prime stimulus automatically pre-activates the corresponding response, which then either facilitates the execution of the target response in case of a match (congruent target), or interferes with the execution of the target response in case of a mismatch (incongruent target). The fact that the effect was mapped on t0 in the present experiment indicates that response compatibility effects mainly affected the execution of correct responses. The lack of an effect on the d parameter indicates that the response compatibility effects were not reversed for error responses. We attribute this null finding at least in part to the fact that the RT component for error responses cannot be estimated very reliably due to the small number of errors.
+
+Experiment 1b is not the first study that reports evidence for a response competition acocunt of affective priming. The new aspect of our study is that it porvided direct evidence for response competition effects in affective priming within the evaluation task.
+Processing of a valent prime did not have an influence on the drift rate for targets, indicating affective congruency does not facilitate target processing. Affective congruency effects in the evaluation task thus have to be explained differently. The diffusion model analyses suggest that the basis of the effect lies in extra-decisional components of response facilitation and interference.
+
+
+#################################################################
+### Experiment 2a: affective congruency of prime-target pairs.
+#################################################################
+
+Experiment 2 followed Experimental 1b in procedure, experimental and data treatment-wise.
+Similarly, in experiment 2a, evaluation latencies from affectively congruent trials were shorter than latencies from incongruent trials.
+In contrast, error rates were reduced in affective congruent trials, compared to trials with affectively incongruent trials.
+
+Drift rate (v), RT-constant (t0), and response-execution bias parameter (d) were entered in separate repeated measurement ANOVAs.
+Results revealed a main effect of congruency on t0¨, indicating faster response execution in affectively congruent trials. Effects on the execution bias parameter d revealed that congruency had an opposite influence on RT constants of correct and error responses. Conforming to our expectations, negative values of d (indicating a delay of correct responses) emerged in affectively incongruent trials. Althoguh the drift rate is numerically larger for congruent compared to incongruent paris, this effect is not significant.
+Data were reanalyzed with a diffusion model in which d was fixed to 0 and z was estimated for all conditions. Results revealed shorter non-decisional times (t0) for congruency, with no other effects.
+
+
+```{r Contrast Congruent - Incongruent, options}
+
+emmCongrFit %>%
+  contrast(method="pairwise",exclude=c(1,4))
 
 ```
 
-```{r reproduction Voss et al. 2013, options}
+
+```{r Diffusion, options}
 
 df %>%
   filter(diffInclusion)
@@ -553,4 +580,5 @@ df %>%
 
 
 ```
+
 
