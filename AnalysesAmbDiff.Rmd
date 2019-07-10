@@ -141,9 +141,9 @@ df <- RAW %>%
       ),
     Congruency = case_when(
       equals(primeValence %>% as.character,targetValence %>% as.character) ~ "Congruent",
-      primeValence %in% c("Positive","Negative") ~ "Incongruent",
+      primeValence %>% as.character %>% is_in(c("Positive","Negative")) ~ "Incongruent",
       TRUE ~ primeValence %>% as.character
-    ) %>% factro(levels=c("Ambivalent","Positive","Negative","Neutral")),
+    ) %>% factor(levels=c("Ambivalent","Congruent","Incongruent","Neutral")),
     RT = Time %>% as.numeric,
     logRT = RT %>% log,
     Correct = Response == targetValence,
@@ -236,27 +236,27 @@ df %>%
 ################
 
 The main idea here is to test whether the ambivalence deceleration found in previous research (e.g. Berger, Hütter, & Corneille, 2019) is also found here.
-For this, we run a mixed model including
+For this, we run a mixed model.
 
 
-```{r Hierarchical Models, options}
+```{r Valence Model, options}
 
 afex::set_effects_contrasts()
 
-Fit <- df %>%
+valFit <- df %>%
   filter(Inclusion) %>%
   mixed(
     logRT ~ primeValence * targetValence * Block + (1|primeWord) + (1|targetWord) + (1|Subject),
     data = .,
     method='S'
   )
-Fit
+valFit
 
-emmFit <- Fit %>%
+emmValFit <- valFit %>%
   emmeans(~primeValence * targetValence)
 
 
-contrFit <- emmFit %>%
+contrValFit <- emmValFit %>%
   contrast(method="revpairwise",adjust="none") %>%
   as_tibble %>%
   separate(
@@ -270,15 +270,15 @@ contrFit <- emmFit %>%
 
 ```{r Mixed Contrasts, options}
 
-Fit %>%
+valFit %>%
   emmeans(~Block) %>%
   contrast
 
-Fit %>%
+valFit %>%
   emmeans(~primeValence * targetValence * Block) %>%
   contrast(method = "trt.vs.ctrl", by=c("Block","targetValence"))
 
-Fit %>%
+valFit %>%
   emmeans(~primeValence * targetValence) %>%
   contrast(method = "trt.vs.ctrl", by=c("targetValence"))
 
@@ -342,7 +342,7 @@ Further, the results above are computed with the dunnettx method for 3 tests. Le
 
 ```{r emmGraph, options}
 
-graphFit <- emmFit %>%
+ggValFit <- emmValFit %>%
   as_tibble %>%
   transmute(
     RT = emmean %>% exp,
@@ -370,15 +370,15 @@ graphFit <- emmFit %>%
   geom_segment(
     data = tibble(
       x = c(.75,1.25),
-      y = c(660,700),
       xend = c(1.75,3.25),
+      y = c(660,700),
       yend = c(660,700)
     ),
     aes(x=x,y=y,xend=xend,yend=yend,size=.75),
     inherit.aes = FALSE
   ) +
   geom_label(
-    data = contrFit %>% filter(p.value < .05),
+    data = contrValFit %>% filter(p.value < .05),
     aes(
       x = c(1.25,2.25),
       y = c(660,700),
@@ -386,9 +386,9 @@ graphFit <- emmFit %>%
     ),
     inherit.aes = FALSE
   )
-graphFit
+ggValFit
 
-ggsave("emmMixed",plot = graphFit,device = "svg")
+ggsave("valEmm.svg",plot = ggValFit,device = "svg")
 
 
 ```
@@ -397,7 +397,88 @@ Comparisons with neutral primes did not show differences, except for incongruent
 
 ```{r further contrasts, options}
 
-emmFit %>% contrast(method = "trt.vs.ctrlk", by=c("targetValence"))
+emmValFit %>% contrast(method = "trt.vs.ctrlk", by=c("targetValence"))
+
+```
+
+
+```{r Congruency Model, options}
+
+afex::set_effects_contrasts()
+
+congrFit <- df %>%
+  filter(Inclusion) %>%
+  mixed(
+    logRT ~ Congruency * Block + (1|primeWord) + (1|targetWord) + (1|Subject),
+    data = .,
+    method='S'
+  )
+congrFit
+
+emmCongrFit <- congrFit %>%
+  emmeans(~Congruency)
+
+
+contrCongrFit <- emmCongrFit %>%
+  contrast(method="trt.vs.ctrl",adjust="none") %>%
+  as_tibble %>%
+  separate(
+    contrast,
+    c("primeA","primeB")
+  )
+
+congrFit %>%
+  emmeans(~Block) %>%
+  contrast
+
+```
+
+Comparing directly on congruency, the same results are found, with ambivalent trials being clearly slower than congruent trials.
+Note that here there seems to be a difference between neutral and ambivalent primes, indicating ambivalent primes being slower.
+The inconsistency between this model and the previous could reflect the difficulty of consistently finding this effect (e.g. Berger, Hütter, & Corneille, 2019).
+
+```{r label, options}
+
+ggCongrFit <- emmCongrFit %>%
+  as_tibble %>%
+  transmute(
+    RT = emmean %>% exp,
+    minRT = asymp.LCL %>% exp,
+    maxRT = asymp.UCL %>% exp,
+    Congruency = Congruency %>% factor(levels = c("Ambivalent","Congruent","Incongruent","Neutral"))
+  ) %>%
+  ggplot(
+    aes(y = RT, ymin = minRT, ymax = maxRT, x = Congruency)
+  ) +
+  geom_col(position = position_dodge2()) +
+  geom_errorbar(width=.3) +
+  labs(x = "Prime Conditions", y = "Reaction Times (ms)") +
+  theme(
+    plot.margin = unit(c(1.4,0.4,0.4,0.4),"cm")
+  ) +
+  geom_segment(
+    data = tibble(
+      x = c(1,1),
+      xend = c(2,4),
+      y = c(660,700),
+      yend = c(660,700)
+    ),
+    aes(x=x,y=y,xend=xend,yend=yend,size=1),
+    inherit.aes = FALSE
+  ) +
+  scale_size_identity() +
+  geom_label(
+    data = contrCongrFit %>% filter(p.value < .05),
+    aes(
+      x = c(1.5,2.5),
+      y = c(660,700),
+      label = p.value %>% sprintf("%.4f",.)
+    ),
+    inherit.aes = FALSE
+  )
+ggCongrFit
+
+ggsave("congrEmm.svg",plot = ggCongrFit,device = "svg")
 
 ```
 
@@ -433,6 +514,36 @@ We therefore decided to fix z to a/2 in all analyses. We decided to estimate sep
 
 Drift rate (v), response-time constant (t0), and response tendency parameter (d) were estimated separately for different prime types (i.e., congruent, incongruent, or neutral) while the remaining parameters (a, sz, sv, and st) were assumed constant across conditions.
 
+
+Overview and Hypotheses
+
+The drift rate (v) maps effects such as differences in speed of target identification, or accessibility of semantic target features.
+The response-time constant (t0) captures activation and execution of the correct motor program.
+
+  We assume that primes lead to a pre-activation of associated target concepts and their semantic attributes which should have an impact on the efficiency of the decision process. Information from pre-activated targets should be more readily accessible, that is, the target concept and semantic target attributes should be processed and identified more readily. Therefore, we expect larger drift rates (v) for targets associated compared to non-associated primes. Such associative priming effects are expected to be largerly independent of the task that is to be performed on the targets as long as the task requires lexical or semantic target processing.
+  As elaborated above, we expect that all types of response priming designs are primarily based on Stroop-like interference processes. We assume that such interference processes operate at the stage of response execution. According to this account, a prime from the same category as a following target might pre-activate the corresponding motor-response program. In this case, the primed response can be executed faster. IF the prime belongs to the alternative response category, the execution of the correct response to the target should be slowed down due to response interference. Since these effects operate independently of the identification and classification of the target, they will be mapped onto the non-decisional RT component of the diffusion model. The non-decisional component shoulde either be generally reduced by a categorical match between prime and target (lower values on t0), or, more specifically, the primes should reduce/increase the time that is need in order to execute the matching/non-matching response, leading to positive/negative values for d in case of congruent/incongruent primes
+  Another possibility that cannot be ruled out a priori is that response priming effects influence the response selection process by biasing the deciison process in the direction of the prime category. Such an effect would be mapped by the diffusion model on the starting point (z). As already mentioned above, we cannot estimate priming effects on t0, d, and z simultaneously (Voss et al. 2010). We therefore decided to estimate models with two non-decisional components (t0 and d) in which the starting point was fixed, but we also conducted additional analyses in which the starting point was estimated freely.
+
+
+Experiment 1b: affective priming in the evaluation task
+Experiment 2a: affective congruency of prime-target pairs.
+
+
+For experiment 1b, 48 positive and 48 negative German adjectives were used as targets. 48 positive and 48 negative nouns were used as primes. Prime-target pairs were constructed by assigning one congruent prime, one incongruent prime, and one neutral letter string prime to each target. Each prime word was used as congruent prime for one target and as incongruent prime for another target. Pairings were identical for all participants.
+The only theoretically relevant factor was prime type: affectively congruent, affectively incongruent, neutral.
+
+Data pre-treatment.
+  Speed instructions and rewarding of speeded responses were used to evoke a high error rate. However, the logic of payoffs seemed to have encouraged participants to make fast guesses in some trials to maximize the chance of winning the performance related reward. Accordingly, there was a large amount of fast outlier latencies which can bias parameter estimates from a diffusion model analysis. Therefore, a three-step procedure to identify outliers was performed: First, all latencies below 200ms were excluded. Second, latencies were eliminated starting from the lower edge of the individual RT distributions until the number of removed correct responses exceeded the number of removed error responses by 3. This was done to exclude latencies that were based on pure guessing. Third, from the remaining individual latency distributions values below the first quartile minus 1.5 inter-quartile-ranges were eliminated, and similar for values above the third quartiel plus 1.5 inter-quartile-ranges. This procedure led to an exclusion of 7.3% of trials.
+
+```{r Mixed Exp 1b, options}
+
+df %>%
+  filter(Inclusion) %>%
+  summarize()
+  
+
+
+```
 
 ```{r reproduction Voss et al. 2013, options}
 
