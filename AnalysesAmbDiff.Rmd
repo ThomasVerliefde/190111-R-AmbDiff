@@ -1,47 +1,44 @@
 ---
 Author: Thomas Verliefde
-Date: '2019-04-09'
+Date: '2019-07-10'
 Output: html_document
 Title: Analyses AmbDiff
 editor_options:
   chunk_output_type: console
-version: '0.1'
+version: '0.3'
 ---
-
-TODO: Check all variables whether they are what they should be (factor, numeric, ...)
-TODO: Additional analysis with control variables (keyfirst, otherfirst, gender, ...)
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 rm(list=ls())
-load("20190411.RData")
-save.image(file="20190411.RData")
+# load("20190411.RData")
+# save.image(file="20190411.RData")
 ```
 
 ```{r libraries, include=FALSE}
 lapply(
   c("plyr","dplyr","tidyr","ggplot2","readxl","readr","lme4","afex","lmerTest",
-    "emmeans","purrr","magrittr","cowplot"),
+    "emmeans","purrr","magrittr","cowplot","stringr"),
   require,
   character.only = T
 )
 ```
 
-##################
-# Data Wrangling #
-##################
+#################
+# Data Wrangling 
+#################
 
-```{r import, cache=FALSE}
+```{r import, cache=FALSE, message=FALSE}
 
 temp <- tempdir()
-df_raw <- "Data_AmbDiff.zip" %>% {
+RAW <- "Data_AmbDiff.zip" %>% {
   ldply(
     .data = unzip(.,list=T) %$%
       grep("(.csv)$",Name,value=TRUE),
     .fun = function(x) unzip(.,files=x,exdir=temp) %>%
-      read_csv
+      read_csv(col_types = rep("?",1259) %>% paste0(collapse=""))
   ) %>% as_tibble %>% arrange(Subject)
-}
+} 
 rm(temp)
 
 ```
@@ -51,7 +48,7 @@ rm(temp)
 # utils::View(df_raw)
 seq(1,80) %in% df_raw$Subject %>% not %>% which
 "Data_AmbDiff.zip" %>% unzip(list=T) %>% arrange(Date) %>%
-  filter(grepl("(.csv)$",.$Name)) %>% extract(44:50,c(1,3))
+  filter(grepl("(.csv)$",.$Name))
 
 ```
 
@@ -61,139 +58,134 @@ Comments from during data collection:
 *Subject 20 was remarkably quick
 *Subject 44 stated to already know the experiment - will be excluded
 *Subject 59 stated to already know the experiment - will be excluded
-*Subject 60 had to restart the experiment once
+*Subject 60 had to restart the experiment once, at the start
 
 ```{r df, options}
 
-df <- df_raw %>%
+df <- RAW %>%
   select(
-    grep("(^time)|(hostName)|(Primes$)|(Trials$)",colnames(.),invert=TRUE)
-  ) %>%
+    grep("(Primes$)|(Trials$)|(^practice)",colnames(.),invert=TRUE)
+  )%>%
   gather(
     key = "key",
     value = "value",
-    grep("(^practice)|(^experiment)",colnames(.))
+    grep("(^experiment)",colnames(.))
   ) %>%
-  separate(
-    key,
-    c("Exp","key"),
-    sep="_",
-    extra = "merge"
-  ) %>%
-  separate(
+  tidyr::extract(
+    .,
     key,
     c("Block","Trial","key"),
-    sep="_",
-    fill="left"
+    "(\\d+)_(\\d+)_(\\D+)$"
+  ) %>%
+  mutate(
+    Subject = Subject %>% as.factor,
+    key = key %>% str_to_title
   ) %>%
   spread(
     key,
     value
   ) %>%
-  arrange(
-    Subject,Block,as.numeric(Trial)
-  ) %>%
-  mutate(
-    Subject = Subject %>% as.factor
-  ) %>%
   group_by(
     Subject
   ) %>%
-  mutate(
-    Gender = recode(
-      Gender,
-      "weiblich" = "Female",
-      "männlich" = "Male",
-      .default = "Other"
-    ),
-    Language = recode(
-      Language,
-      "Deutsch" = "German",
-      "Sonstiges" = "Other"
-    ),
-    Handedness = recode(
-      Handedness,
-      "rechts" = "Right",
-      "links" = "Left",
-      "beide" = "Both"
-    ),
-    Block = Block %>% as.factor,
-    Trial = Trial %>% as.numeric,
+  transmute(
+    Key = Key %>% factor(levels=c("Ypos","Yneg")),
+    Age = Age %>% as.numeric,
+    Gender = Gender %>%
+      recode(
+        "weiblich" = "Female",
+        "männlisch" = "Male",
+        .default = "Other"
+      ) %>% factor(levels=c("Female","Male","Other")),
+    Language = Language %>%
+      recode(
+        "Deutsch" = "German",
+        "Sonstiges" = "Other"
+      ) %>% factor(levels=c("German","Other")),
+    Handedness = Handedness %>%
+      recode(
+        "rechts" = "Right",
+        "links" = "Left",
+        "beide" = "Both"
+      ) %>% factor(levels = c("Right","Left","Both")),
+    Block = Block %>%
+      recode(
+        "0" = "First",
+        "1" = "Second"
+      ) %>%
+      factor(levels=c("First","Second")),
+    Trial = Trial %>%
+      as.numeric,
     Response = case_when(
-      answer == 'Y' & Key == 'Yneg' ~ 'Negative',
-      answer == 'OemMinus' & Key == 'Ypos' ~ 'Negative',
-      TRUE ~ 'Positive'
-    ),
-    primeCat = recode(
-      primeCat,
-      "0" = "Ambivalent",
-      "1" = "Positive",
-      "2" = "Negative",
-      "3" = "Neutral"
-    ),
-    targetCat = recode(
-      targetCat,
-      "0" = "Positive",
-      "1" = "Negative"
-    ),
-    RT = time %>% as.numeric,
-    logRT = log(RT),
-    Correct = Response == targetCat,
+      Key == "Ypos" & Answer == "Y" ~ "Positive",
+      Key == "Yneg" & Answer == "OemMinus" ~ "Positive",
+      Key == "Ypos" & Answer == "OemMinus" ~ "Negative",
+      Key == "Yneg" & Answer == "Y" ~ "Negative"
+    ) %>%
+      factor(levels = c("Positive","Negative")),
+    primeWord = Prime %>% as.factor,
+    primeValence = Primecat %>%
+      as.factor %>%
+      recode(
+        "0" = "Ambivalent",
+        "1" = "Positive",
+        "2" = "Negative",
+        "3" = "Neutral"
+      ),
+    targetWord = Target %>% as.factor,
+    targetValence = Targetcat %>%
+      as.factor %>%
+      recode(
+        "0" = "Positive",
+        "1" = "Negative"
+      ),
+    Congruency = case_when(
+      equals(primeValence %>% as.character,targetValence %>% as.character) ~ "Congruent",
+      primeValence %in% c("Positive","Negative") ~ "Incongruent",
+      TRUE ~ primeValence %>% as.character
+    ) %>% factro(levels=c("Ambivalent","Positive","Negative","Neutral")),
+    RT = Time %>% as.numeric,
+    logRT = RT %>% log,
+    Correct = Response == targetValence,
     Accuracy = mean(Correct),
-    speedIncl = (RT >= 300 & RT <= 3000),
-    #Trials with latencies smaller than 300ms or larger than 3000ms were excluded.
-    accIncl = (1 - mean(speedIncl & Correct)) < 0.83,
+    latencyIncl = (RT >= 300 & RT <= 3000),
+    accIncl = (1 - mean(latencyIncl | Correct)) < 0.83,
     ruleIncl = (Subject %in% c(44,59,60)) %>% not,
     subjIncl = accIncl & ruleIncl,
-    trialIncl = Correct & speedIncl,
-    Inclusion = trialIncl & subjIncl
-  ) %>%
-  select(
-    everything(),
-    answerCode = answer,
-    Prime = prime,
-    Target = target,
-    -time
-  ) %>% ungroup
+    trialIncl = Correct & latencyIncl,
+    Inclusion = trialIncl & subjIncl,
+    diffInclusion = latencyIncl & subjIncl
+  ) %>% ungroup %>%
+  arrange(Subject,Block,Trial)
 
-# utils::View(df)
 ```
 
-```{r subsets, options}
+```{r dfDemo, options}
 
-df_sub <- df %>%
-  distinct(
-    Subject,Age,Gender,Language,Handedness,Study,Key,Accuracy,accIncl,ruleIncl,subjIncl
-  )
-
-df_trials <- df %>%
-  filter(Exp == "experiment") %>%
-  select(
-    Subject,Key,Age,Gender,Block,Trial,Prime,primeCat,Target,targetCat,Response,RT,logRT,
-    Correct,Accuracy,speedIncl,accIncl,ruleIncl,subjIncl,trialIncl,Inclusion
-  )
+dfDemo <- df %>%
+  distinct(Subject,Key,Age,Gender,Language,Handedness,Accuracy,accIncl,ruleIncl,subjIncl)
 
 ```
 
 ################
-# Demographics #
+# Demographics 
 ################
 
 ```{r subj excl, options}
 
-df_sub %>%
+dfDemo %>%
   filter(accIncl %>% not) %>%
   nrow %>%
-  paste("participants were excluded due to extremes in accuracy and/or latency.")
+  paste("participants were excluded due to extremes in accuracy or latency.")
 
-df_sub %>%
+dfDemo %>%
   filter(ruleIncl %>% not) %>%
   nrow %>%
   paste("participants were excluded due to issues during data collection.")
 # 2 participants indicated to have already performed the experiment before.
 # 1 participant had to restart the program during experimentation.
 
-df_sub %>%
+dfDemo %>%
   filter(subjIncl) %>%
   nrow %>%
   paste("participants were included for the analyses.")
@@ -202,7 +194,7 @@ df_sub %>%
 
 ```{r trial excl, options}
 
-df_trials %>%
+df %>%
   filter(subjIncl) %$%
   mean(Correct) %>%
   subtract(1,.) %>%
@@ -210,53 +202,244 @@ df_trials %>%
   signif(2) %>%
   paste0("% of trials from included participants were incorrectly categorised.")
 
-df_trials %>%
+df %>%
   filter(subjIncl) %$%
-  mean(speedIncl) %>%
+  mean(latencyIncl) %>%
   subtract(1,.) %>%
   multiply_by(100) %>%
   signif(2) %>%
   paste0("% of trials from included participants were responded to either too quickly (<300ms) or too slowly (>3000ms)")
 
-df_trials %>%
+df %>%
   filter(subjIncl) %$%
   mean(trialIncl) %>%
   multiply_by(100) %>%
   signif(2) %>%
-  paste0("% of trials from included participants were ultimately included, based on speed and accuracy.")
+  paste0("% of trials from included participants were ultimately included for hierarchical analyses, based on speed and accuracy.")
+
+df %>%
+  filter(subjIncl) %$%
+  mean(latencyIncl) %>%
+  multiply_by(100) %>%
+  signif(2) %>%
+  paste0("% of trials from included participants were ultimately included for diffusion analyses, based on speed and accuracy.")
 
 ```
 
 
-
 ############
-# Analyses #
+# Analyses 
 ############
 
 ################
-## Multilevel ##
+## Hierarchical
 ################
 
-```{r multilevel, options}
+The main idea here is to test whether the ambivalence deceleration found in previous research (e.g. Berger, Hütter, & Corneille, 2019) is also found here.
+For this, we run a mixed model including
+
+
+```{r Hierarchical Models, options}
 
 afex::set_effects_contrasts()
-fit_multi <- df_trials %>%
+
+Fit <- df %>%
   filter(Inclusion) %>%
   mixed(
-    logRT ~ primeCat * targetCat + (1|Prime) + (1|Target) + (1|Subject),
+    logRT ~ primeValence * targetValence * Block + (1|primeWord) + (1|targetWord) + (1|Subject),
     data = .,
     method='S'
   )
+Fit
 
+emmFit <- Fit %>%
+  emmeans(~primeValence * targetValence)
+
+
+contrFit <- emmFit %>%
+  contrast(method="revpairwise",adjust="none") %>%
+  as_tibble %>%
+  separate(
+    contrast,
+    c("primeA","targetA","primeB","targetB")
+  ) %>%
+  filter(primeB == "Ambivalent" & primeA != "Ambivalent") %>%
+  filter(targetA == targetB)
+
+```
+
+```{r Mixed Contrasts, options}
+
+Fit %>%
+  emmeans(~Block) %>%
+  contrast
+
+Fit %>%
+  emmeans(~primeValence * targetValence * Block) %>%
+  contrast(method = "trt.vs.ctrl", by=c("Block","targetValence"))
+
+Fit %>%
+  emmeans(~primeValence * targetValence) %>%
+  contrast(method = "trt.vs.ctrl", by=c("targetValence"))
 
 
 ```
 
+Block Comparison
+
+ contrast      estimate      SE  df z.ratio p.value
+ First effect     0.021 0.00178 Inf  11.789 <.0001  ***
+ Second effect   -0.021 0.00178 Inf -11.789 <.0001  ***
+
+
+Prime Comparison by Block & targetValence
+
+Block = First, targetValence = Positive:
+ contrast               estimate     SE  df z.ratio p.value
+ Positive - Ambivalent -0.010508 0.0101 Inf -1.044  0.5833 
+ Negative - Ambivalent  0.013543 0.0102 Inf  1.328  0.4056 
+ Neutral - Ambivalent   0.000555 0.0101 Inf  0.055  0.9989 
+
+Block = First, targetValence = Negative:
+ contrast               estimate     SE  df z.ratio p.value
+ Positive - Ambivalent -0.005451 0.0103 Inf -0.531  0.8819 
+ Negative - Ambivalent -0.009350 0.0103 Inf -0.911  0.6692 
+ Neutral - Ambivalent  -0.012950 0.0102 Inf -1.269  0.4406 
+
+Block = Second, targetValence = Positive:
+ contrast               estimate     SE  df z.ratio p.value
+ Positive - Ambivalent -0.036828 0.0100 Inf -3.672  0.0007  ***
+ Negative - Ambivalent  0.006738 0.0101 Inf  0.666  0.8154 
+ Neutral - Ambivalent  -0.019648 0.0101 Inf -1.948  0.1325 
+
+Block = Second, targetValence = Negative:
+ contrast               estimate     SE  df z.ratio p.value
+ Positive - Ambivalent  0.001699 0.0102 Inf  0.167  0.9891 
+ Negative - Ambivalent -0.026018 0.0101 Inf -2.573  0.0281  *
+ Neutral - Ambivalent  -0.011373 0.0101 Inf -1.124  0.5314
+
+
+Prime Comparison by targetValence, averaged over Block
+
+targetValence = Positive:
+ contrast              estimate      SE  df z.ratio p.value
+ Positive - Ambivalent -0.02367 0.00717 Inf -3.300  0.0028  ***
+ Negative - Ambivalent  0.01014 0.00725 Inf  1.398  0.3651 
+ Neutral - Ambivalent  -0.00955 0.00721 Inf -1.325  0.4073 
+
+targetValence = Negative:
+ contrast              estimate      SE  df z.ratio p.value
+ Positive - Ambivalent -0.00188 0.00730 Inf -0.257  0.9734 
+ Negative - Ambivalent -0.01768 0.00727 Inf -2.431  0.0414  *
+ Neutral - Ambivalent  -0.01216 0.00725 Inf -1.677  0.2278 
+ 
+We can replicate the results found previously:
+  Ambivalent prime trials have significantly higher latencies in comparison to congruent positive and negative noun prime trials.
+  There seems to be no difference otherwise, not for incongruent trials, nor for neutral letter primes.
+
+These results are not found in only the first block, but they are found in the second, and when averaging over blocks.
+Further, the results above are computed with the dunnettx method for 3 tests. Leaving out this adjustment, the results stay the same.
+
+```{r emmGraph, options}
+
+graphFit <- emmFit %>%
+  as_tibble %>%
+  transmute(
+    RT = emmean %>% exp,
+    minRT = asymp.LCL %>% exp,
+    maxRT = asymp.UCL %>% exp,
+    primeValence = primeValence %>% factor(levels = c("Ambivalent","Positive","Negative","Neutral")),
+    targetValence = targetValence %>% factor(levels = c("Positive","Negative")),
+    Congruency = case_when(
+      equals(primeValence %>% as.character,targetValence %>% as.character) ~ "Congruent",
+      TRUE ~ "Other"
+      )
+  ) %>%
+  ggplot(
+    aes(y = RT, ymin = minRT, ymax = maxRT, x = primeValence, fill = targetValence, colour = Congruency, size = if_else(Congruency == "Congruent",1.1,0))
+  ) +
+  geom_col(position = position_dodge2()) +
+  geom_errorbar(position = position_dodge2(padding=.8),colour="black",size=.5) +
+  labs(x = "Prime Valence", y = "Reaction Times (ms)", fill = "Target\nValence") +
+  guides(colour=FALSE,size=FALSE) +
+  scale_colour_manual(values=c("black","white")) +
+  scale_size_identity() +
+  theme(
+    plot.margin = unit(c(1.4,0.4,0.4,0.4),"cm")
+  ) +
+  geom_segment(
+    data = tibble(
+      x = c(.75,1.25),
+      y = c(660,700),
+      xend = c(1.75,3.25),
+      yend = c(660,700)
+    ),
+    aes(x=x,y=y,xend=xend,yend=yend,size=.75),
+    inherit.aes = FALSE
+  ) +
+  geom_label(
+    data = contrFit %>% filter(p.value < .05),
+    aes(
+      x = c(1.25,2.25),
+      y = c(660,700),
+      label = p.value %>% sprintf("%.3f",.)
+    ),
+    inherit.aes = FALSE
+  )
+graphFit
+
+ggsave("emmMixed",plot = graphFit,device = "svg")
+
+
+```
+
+Comparisons with neutral primes did not show differences, except for incongruent negative trials.
+
+```{r further contrasts, options}
+
+emmFit %>% contrast(method = "trt.vs.ctrlk", by=c("targetValence"))
+
+```
+
+
 ###############
-## Diffusion ##
+## Diffusion 
 ###############
 
-```{r label, options}
+Voss et al. 2013 - Cognitive Processses in Associative and Categorical Priming: A Diffusion Model Analysis
+
+Parameters:
+  v   drift rate
+  a   thershold distance
+  z   starting point
+  t0  non-decisional processes
+  sx  trial-to-trial variability
+  
+  d = t0lower - t0upper
+  t0lower  non-decisional processes for lower threshold
+  t0upper  non-decisional processes for upper threshold
+
+Kolmogorov-Smirnov Statistic for optimization
+
+The diffusion model was fitted to the individual response time distributions (using fast-dm).
+In all analyses, data were collapsed across target types (i.e. positive and negative).
+The upper threshold was assigned to correct responses (~ positive drift rates indicate more efficient processing).
+The d-parameter maps the difference between positions of RT-distributions for correct responses and error responses.
+If primes influence the speed of response execution, larger values of d will emerge for congruent primes, and smaller for incongruent primes.
+
+Due to a low number of errors, it was not possible to estimate a model with free starting point and with separate non-decisional parameters for correct and incorrect responses.
+For the same reason, the distance from the starting point to the lower threshold can also not be estimated with sufficient accuracy.
+We therefore decided to fix z to a/2 in all analyses. We decided to estimate separate t0 parameters, rather than differences in starting point.
+
+Drift rate (v), response-time constant (t0), and response tendency parameter (d) were estimated separately for different prime types (i.e., congruent, incongruent, or neutral) while the remaining parameters (a, sz, sv, and st) were assumed constant across conditions.
+
+
+```{r reproduction Voss et al. 2013, options}
+
+df %>%
+  filter(diffInclusion)
+
+
 
 ```
 
