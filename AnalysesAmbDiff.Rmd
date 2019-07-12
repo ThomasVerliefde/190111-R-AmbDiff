@@ -18,7 +18,7 @@ rm(list=ls())
 ```{r libraries, include=FALSE}
 lapply(
   c("plyr","dplyr","tidyr","ggplot2","readxl","readr","lme4","afex","lmerTest",
-    "emmeans","purrr","magrittr","cowplot","stringr"),
+    "emmeans","purrr","magrittr","cowplot","stringr","rstan"),
   require,
   character.only = T
 )
@@ -571,14 +571,262 @@ emmCongrFit %>%
 
 ```
 
+Structure for fast-dm:
+  response -> 1 vs 0
+  latency -> seconds
 
-```{r Diffusion, options}
+Each line is data from 1 trial
+space or tab separated
 
-df %>%
-  filter(diffInclusion)
+
+
+```{r Data Diffusion, options}
+
+dfDiff <- df %>%
+  filter(diffInclusion) %>%
+  select(Subject,Block, Trial, primeValence, targetValence, Congruency, Response, Correct, RT) %>%
+  mutate(
+    Block = Block %>%
+      recode(
+        "First" = 1,
+        "Second" = 2
+      ),
+    primeValence = primeValence %>%
+      recode(
+        "Positive" = 0,
+        "Negative" = 1,
+        "Neutral" = 2,
+        "Ambivalent" = 3
+      ),
+    targetValence = targetValence %>%
+      recode(
+        "Positive" = 0,
+        "Negative" = 1
+      ),
+    Congruency = Congruency %>%
+      recode(
+        "Congruent" = 0,
+        "Incongruent" = 1,
+        "Neutral" = 2,
+        "Ambivalent" = 3
+      ),
+    Response = Response %>%
+      recode(
+        "Positive" = 0,
+        "Negative" = 1
+      ),
+    Correct = Correct %>% as.numeric
+  )
+
+```
+
+Note, the diffusion parameter estimation is performed using fast-DM outside of R.
+For this, 
+
+```{r Write Diffusion, options}
+
+dfDiff %>%
+  d_ply(
+    ~ Subject,
+    function(x) {
+      write(
+        "# Block Trial primeValence targetValence Congruency Response Correct RT",
+        paste0("fastDM/Data/dat",x$Subject %>% unique,".txt")
+      )
+      write.table(
+        x %>% select(-Subject),
+        paste0("fastDM/Data/dat",x$Subject %>% unique,".txt"),
+        sep = " ",
+        append = TRUE,
+        row.names=FALSE,
+        quote=FALSE,
+        col.names=FALSE
+      )
+    }
+  )
+
+```
+
+```{r Write Control, options}
+
+"method ks
+# using Kolmogorov-Smirnov statistic
+set zr 0.5
+set p 0
+# fixing z relative to a at 0.5
+# a, sz, sv, st assumed constant across conditions for parsimony
+depends v Congruency
+depends d Congruency
+depends t0 Congruency
+# allowing v, d, & t0 to vary between conditions
+format * * * * Congruency * RESPONSE TIME
+# response is correct/false (1/0)
+load Data\\dat*.txt
+save Results\\Free\\*.par
+log parameterFree.lst" %>%
+  cat(
+    file = "fastDM/model_ks_congr_corrFree.ctl"
+  )
+
+```
+
+The parameter estimation for the diffusion model was computed outside R, using fast-dm.exe within a cmd console.
+The command executed was: fast-dm.exe model_ks_congr_corr.ctl
+Note that this command was executed within the fastDM folder.
+The code below should do the same, but sadly does not seem to output the progress, making the slow process more difficult to overview.
+
+```{r PowerShell, options}
+
+# shell("cd fastDM; .\\fast-dm.exe .\\model_ks_congr_corr.ctl",shell = "PowerShell", intern=TRUE)
+
+```
+
+##################
+### STAN Example
+##################
+
+```{r STAN, options}
+
+# options(mc.cores = parallel::detectCores())
+
+pkgbuild::check_rtools(debug=TRUE)
+
+rstan_options(auto_write = TRUE)
+# 
+# cat("\nCXX14FLAGS=-O3 -march=native",
+#     "CXX14 = g++ -m$(WIN) -std=c++1y",
+#     "CXX11FLAGS=-O3 -march=native",
+#     # file = M,
+#     sep = "\n", append = TRUE)
+
+
+# Sys.setenv(LOCAL_CPPFLAGS = '-march=native')
+
+```
+
+```{r 8 Schools, options}
+
+# model file
+
+"data {
+  int<lower=0> J;
+  real y[J];
+  real<lower=0> sigma[J];
+}
+parameters {
+  real mu;
+  real<lower=0> tau;
+  vector[J] eta;
+}
+transformed parameters {
+  vector[J] theta = mu + tau * eta;
+}
+model {
+  target += normal_lpdf(eta | 0, 1);
+  target += normal_lpdf(y | theta, sigma);
+}
+" %>%
+  cat(file="STAN/8schools.stan")
+
+# data list
+
+schools_dat <- list(
+  J = 8,
+  y = c(28,8,-3,7,-1,1,18,12),
+  sigma = c(15,10,16,11,9,11,10,18)
+  )
+
+```
+
+```{r running STAN, options}
+
+fit <- stan(
+  "STAN/8schools.stan",
+  data = schools_dat,
+  iter = 2000,
+  warmup = 1000,
+  chains = 4,
+  cores=1,
+  thin = 1,
+  init = "random",
+  verbose = TRUE
+  )
+
+```
+
+```{r label, options}
+
+print(fit)
+
+plot(fit)
+
+pairs(fit, pars = c("mu","tau", "lp__")) # lp__ is the log-posterior
+
+la <- rstan::extract(fit, permuted=TRUE)
+
+mu <- la$mu
+
+a <- rstan::extract(fit, permuted=FALSE)
+
+a2 <- as.array(fit)
+
+m <- as.matrix(fit)
+
+d <- as.data.frame(fit)
+
+```
+
+####################
+### STAN Diffusion
+####################
+
+There are packages handling wiener distribution sampling (RWiener, in combination with brms and stan), but it seems that these implementations do not allow for estimation of differences in speed of response execution (d = tlower - tupper; Voss, Voss, & Klauer, 2010).
+
+I'm not very sure how to actually implement this manually..
+
+Further, Stan returns the first passage time of the accumulation process over the upper boundary only. To get the result for the lower boundary, use wiener(y|α,τ,1−β,−δ) For more details, see the appendix of Vandekerckhove and Wabersich (2014).
+
+
+```{r model, options}
+
+"data {
+  int<lower=1> S; // Subjects
+  real y[S];
+  real<lower=0> sigma[S];
+}
+parameters {
+  real alpha; //
+  real delta[S]; // drift rate
+  vector[S] eta;
+}
+transformed parameters {
+  real bias = alpha / 2;
+  vector[S] theta = mu + tau * eta;
+}
+model {
+  target += normal_lpdf(eta | 0, 1);
+  target += wiener_lpdf(y | alpha, tau, beta, delta);
+}
+" %>%
+  cat(file="STAN/diff.stan")
 
 
 
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+#####################
+#### brms + RWiener
+#####################
 
 
