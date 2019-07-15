@@ -579,6 +579,9 @@ Each line is data from 1 trial
 space or tab separated
 
 
+################
+### Diff Model
+################
 
 ```{r Data Diffusion, options}
 
@@ -683,7 +686,7 @@ The code below should do the same, but sadly does not seem to output the progres
 
 
 #########################
-### Parameter Analyses
+### Data Wrangling
 #########################
 
 Note, I could've, way easier, just imported the "parameter.lst" text document, which is formatted as my 
@@ -740,12 +743,178 @@ dfDiff <- RAWDIFF %>%
         "2" = "Neutral",
         "3" = "Ambivalent"
       ) %>% factor(levels = c("Ambivalent","Congruent","Incongruent","Neutral")),
-    Subject = Subject %>%
-      factor,
+    Subject = Subject %>% factor,
     Value = Value %>% as.numeric
-    )
+    ) %>%
+  group_by(Parameter) %>%
+  mutate(zValue = Value %>% scale) %>%
+  ungroup
 
 ```
+
+
+
+################
+### Model Fit
+################
+
+```{r overview, options}
+
+dfDiff %>%
+  group_by(Parameter) %>%
+  summarize_at(
+    vars(Value,zValue),
+    funs(mean,sd,min,max)
+  ) %>%
+  gather("key","Value",-Parameter) %>%
+  separate(key,c("Z","Func")) %>%
+  spread(Func,Value) %>%
+  mutate(Z = Z == "zValue")
+
+```
+
+```{r dist graph, options}
+
+dfDiff %>%
+  distinct(Subject,a) %>%
+  ggplot(aes(x = a %>% as.numeric)) +
+  geom_histogram(binwidth=0.1)
+
+dfDiff %>%
+  distinct(Subject,st0) %>%
+  ggplot(aes(x = st0 %>% as.numeric)) +
+  geom_histogram(binwidth=0.1)
+
+dfDiff %>%
+  distinct(Subject,szr) %>%
+  ggplot(aes(x = szr %>% as.numeric)) +
+  geom_histogram(binwidth=0.01)
+
+# dfDiff %>%
+#   distinct(Subject,time) %>%
+#   ggplot(aes(x = time %>% as.numeric)) +
+#   geom_histogram(binwidth=100)
+
+```
+
+
+```{r parameter dist graphs, options}
+
+dfDiff %>%
+  filter(Parameter == "d") %>%
+  ggplot(aes(x=zValue)) +
+  facet_grid(~Congruency,scales="free_x",) +
+  geom_histogram(binwidth = .1) +
+  geom_vline(xintercept = c(-3,3), colour = "red")
+  
+
+dfDiff %>%
+  filter(Parameter == "t0") %>%
+ ggplot(aes(x=zValue)) +
+  facet_grid(~Congruency,scales="free_x",) +
+  geom_histogram(binwidth = .1) +
+  geom_vline(xintercept = c(-3,3), colour = "red")
+
+dfDiff %>%
+  filter(Parameter == "v") %>%
+  ggplot(aes(x=zValue)) +
+  facet_grid(~Congruency,scales="free_x",) +
+  geom_histogram(binwidth = .1) +
+  geom_vline(xintercept = c(-3,3), colour = "red")
+
+```
+
+
+################################
+#### Assessment of Model Fit
+################################
+
+Predicted data through simulation within fast-dm?
+
+```{r Quantile Probability Plots, options}
+
+# 1 graph / participant (or for aggregated data)
+# Horizontal: Response probability for different conditions
+# Vertical: RT quantiles
+
+
+
+
+```
+
+```{r CDFs, options}
+
+# 1 graph / participant (or for aggregated data)
+# Horizontal: Response Time
+# Vertical: Cumulative Probability
+
+
+```
+
+```{r Scatterplots, options}
+
+# 1 graph / 1 statistic across participants and conditions
+# Horizontal: Data
+# Vertical: Prediction
+
+```
+
+```{r KS Test, options}
+
+# Comparison of observed and predicted CDFs (for each model)
+# Biased: predicted distribution is fitted to empirical data -> too liberal
+
+
+```
+
+```{r Chi² Test, options}
+
+# Comparison of observed vs. predicted number of observations in RT bins (for each model)
+# df = C * 11 - P
+# Problems with low error rates
+
+```
+
+#####################
+#### MC-Simulations
+#####################
+
+Simulate many data-sets from the diffusion model
+- use estimated (or similar) parameter values
+- number of conditions and trials matches real data
+Fit the diffusion model to the simulated data
+- keep all settings identical to the analysis of real data
+Extract fit indices
+- The 5% quantile (upper/lower, depending on optimization criterion) of distribution of fit indices serves a new criterion of significant deviations
+- Models fitting worse than this criterion are to be rejected
+
+
+conditions: 4
+trials: 192
+trials/conditions: 48
+
+
+```{r Parameters MC-Simulations, options}
+
+
+
+
+
+```
+
+
+
+```{r PowerShell, options}
+
+# shell("cd fastDM; .\\construct-samples.exe -a xxx -v xxx -t xxx -d xxx -Z -V -T -p -n 192 -N 1000 -r -o "%d.sim" ",shell = "PowerShell", intern=TRUE)
+
+```
+
+
+
+#########################
+### Parameter Analyses
+#########################
 
 You could do this via group_by(Parameter) %>% do(), but I can't get to save the mixed objects this way, do expects dataframes of some sort.
 The lapply version does seem to work :)
@@ -812,66 +981,6 @@ dfDiff %>%
     Value ~ Congruency,
     data=.
   ) %>% summary
-
-```
-
-
-
-
-```{r label, options}
-
-dfDiff %>%
-  group_by(Parameter) %>%
-  summarize(
-    mean(Value),
-    sd(Value),
-    min(Value),
-    max(Value)
-  )
-
-```
-
-```{r dist graph, options}
-
-dfDiff %>%
-  distinct(Subject,a) %>%
-  ggplot(aes(x = a %>% as.numeric)) +
-  geom_histogram(binwidth=0.1)
-
-dfDiff %>%
-  distinct(Subject,st0) %>%
-  ggplot(aes(x = st0 %>% as.numeric)) +
-  geom_histogram(binwidth=0.1)
-
-dfDiff %>%
-  distinct(Subject,szr) %>%
-  ggplot(aes(x = szr %>% as.numeric)) +
-  geom_histogram(binwidth=0.01)
-
-dfDiff %>%
-  distinct(Subject,time) %>%
-  ggplot(aes(x = time %>% as.numeric)) +
-  geom_histogram(binwidth=100)
-
-```
-
-
-```{r parameter dist graphs, options}
-
-dfDiff %>%
-  filter(Parameter == "d") %>%
-  ggplot(aes(y=Value,x=Congruency,fill=Congruency)) +
-  geom_col(position = position_dodge2())
-
-dfDiff %>%
-  filter(Parameter == "t0") %>%
-  ggplot(aes(y=Value,x=Congruency,fill=Congruency)) +
-  geom_col(position = position_dodge2())
-
-dfDiff %>%
-  filter(Parameter == "v") %>%
-  ggplot(aes(y=Value,x=Congruency,fill=Congruency)) +
-  geom_col(position = position_dodge2())
 
 ```
 
