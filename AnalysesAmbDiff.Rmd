@@ -582,7 +582,7 @@ space or tab separated
 
 ```{r Data Diffusion, options}
 
-dfDiff <- df %>%
+outDiff <- df %>%
   filter(diffInclusion) %>%
   select(Subject,Block, Trial, primeValence, targetValence, Congruency, Response, Correct, RT) %>%
   mutate(
@@ -625,7 +625,7 @@ For this,
 
 ```{r Write Diffusion, options}
 
-dfDiff %>%
+outDiff %>%
   d_ply(
     ~ Subject,
     function(x) {
@@ -662,17 +662,17 @@ depends t0 Congruency
 format * * * * Congruency * RESPONSE TIME
 # response is correct/false (1/0)
 load Data\\dat*.txt
-save Results\\Free\\*.par
+save Results\\sv0\\*.par
 log parameterFree.lst" %>%
   cat(
-    file = "fastDM/model_ks_congr_corrFree.ctl"
+    file = "fastDM/model_ks_congr_corr.ctl"
   )
 
 ```
 
 The parameter estimation for the diffusion model was computed outside R, using fast-dm.exe within a cmd console.
 The command executed was: fast-dm.exe model_ks_congr_corr.ctl
-Note that this command was executed within the fastDM folder.
+Note that this command was executed within the fastDM folder, so that the data is correctly loaded.
 The code below should do the same, but sadly does not seem to output the progress, making the slow process more difficult to overview.
 
 ```{r PowerShell, options}
@@ -680,6 +680,207 @@ The code below should do the same, but sadly does not seem to output the progres
 # shell("cd fastDM; .\\fast-dm.exe .\\model_ks_congr_corr.ctl",shell = "PowerShell", intern=TRUE)
 
 ```
+
+
+#########################
+### Parameter Analyses
+#########################
+
+Note, I could've, way easier, just imported the "parameter.lst" text document, which is formatted as my 
+
+```{r import, options}
+
+RAWDIFF <- "fastDM/Results/sv0" %>%
+  list.files(full.names = TRUE) %>%
+  ldply(
+    function(x) {
+      read.delim(
+        x,
+        header=FALSE,
+        sep = "="
+      ) %>%
+        mutate(
+          Subject = gsub("\\D|(sv0)","",x)
+        ) %>%
+        mutate_all(
+          funs(
+            gsub(" ","",.)
+          )
+        )
+    }
+  )
+
+```
+
+Reminder:
+        "Congruent" = 0,
+        "Incongruent" = 1,
+        "Neutral" = 2,
+        "Ambivalent" = 3
+
+```{r wrangling, options}
+
+dfDiff <- RAWDIFF %>%
+  spread(V1,V2) %>%
+  select(-c("fitindex","method","penalty","precision")) %>%
+  gather(
+    "key",
+    "Value",
+    matches("_\\d")
+  ) %>%
+  separate(
+    key,
+    c("Parameter","Congruency")
+  ) %>%
+  mutate(
+    Congruency = Congruency %>%
+      recode(
+        "0" = "Congruent",
+        "1" = "Incongruent",
+        "2" = "Neutral",
+        "3" = "Ambivalent"
+      ) %>% factor(levels = c("Ambivalent","Congruent","Incongruent","Neutral")),
+    Subject = Subject %>%
+      factor,
+    Value = Value %>% as.numeric
+    )
+
+```
+
+You could do this via group_by(Parameter) %>% do(), but I can't get to save the mixed objects this way, do expects dataframes of some sort.
+The lapply version does seem to work :)
+
+```{r model, options}
+
+afex::set_effects_contrasts()
+
+lapply(
+  c("d","t0","v"),
+  function(x) {
+    assign(paste0("Fit_",x),
+      dfDiff %>%
+        filter(Parameter == x) %>%
+        mixed(
+          Value ~ Congruency + (1|Subject),
+          data = .,
+          method = "KR",
+          test_intercept = TRUE
+        ),
+      envir = globalenv()
+    )
+  }
+)
+
+```
+
+```{r emmeans & contrasts, options}
+
+Fit_d %>%
+  emmeans(~Congruency) %>%
+  contrast(method="trt.vs.ctrl",adjust="none")
+
+Fit_t0 %>%
+  emmeans(~Congruency) %>%
+  contrast(method="trt.vs.ctrl",adjust="none")
+
+Fit_v %>%
+  emmeans(~Congruency) %>%
+  contrast(method="trt.vs.ctrl",adjust="none")
+
+```
+
+
+```{r ANOVA, options}
+
+dfDiff %>%
+  filter(Parameter == "d") %>%
+  aov(
+    Value ~ Congruency,
+    data=.
+  ) %>% summary
+
+dfDiff %>%
+  filter(Parameter == "t0") %>%
+  aov(
+    Value ~ Congruency,
+    data=.
+  ) %>% summary
+
+dfDiff %>%
+  filter(Parameter == "v") %>%
+  aov(
+    Value ~ Congruency,
+    data=.
+  ) %>% summary
+
+```
+
+
+
+
+```{r label, options}
+
+dfDiff %>%
+  group_by(Parameter) %>%
+  summarize(
+    mean(Value),
+    sd(Value),
+    min(Value),
+    max(Value)
+  )
+
+```
+
+```{r dist graph, options}
+
+dfDiff %>%
+  distinct(Subject,a) %>%
+  ggplot(aes(x = a %>% as.numeric)) +
+  geom_histogram(binwidth=0.1)
+
+dfDiff %>%
+  distinct(Subject,st0) %>%
+  ggplot(aes(x = st0 %>% as.numeric)) +
+  geom_histogram(binwidth=0.1)
+
+dfDiff %>%
+  distinct(Subject,szr) %>%
+  ggplot(aes(x = szr %>% as.numeric)) +
+  geom_histogram(binwidth=0.01)
+
+dfDiff %>%
+  distinct(Subject,time) %>%
+  ggplot(aes(x = time %>% as.numeric)) +
+  geom_histogram(binwidth=100)
+
+```
+
+
+```{r parameter dist graphs, options}
+
+dfDiff %>%
+  filter(Parameter == "d") %>%
+  ggplot(aes(y=Value,x=Congruency,fill=Congruency)) +
+  geom_col(position = position_dodge2())
+
+dfDiff %>%
+  filter(Parameter == "t0") %>%
+  ggplot(aes(y=Value,x=Congruency,fill=Congruency)) +
+  geom_col(position = position_dodge2())
+
+dfDiff %>%
+  filter(Parameter == "v") %>%
+  ggplot(aes(y=Value,x=Congruency,fill=Congruency)) +
+  geom_col(position = position_dodge2())
+
+```
+
+
+
+
+
+
+
 
 ##################
 ### STAN Example
