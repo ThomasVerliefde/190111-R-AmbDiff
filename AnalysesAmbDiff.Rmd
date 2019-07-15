@@ -671,16 +671,41 @@ log parameterFree.lst" %>%
     file = "fastDM/model_ks_congr_corr.ctl"
   )
 
+"method ks
+# using Kolmogorov-Smirnov statistic
+set zr 0.5
+set sv 0
+set szr 0
+set st0 0
+set p 0
+# fixing z relative to a at 0.5
+# a, sz, sv, st assumed constant across conditions for parsimony and computational speed, additionally, only a will be estimated
+depends v Congruency
+depends d Congruency
+depends t0 Congruency
+# allowing v, d, & t0 to vary between conditions
+format * * * * Congruency * RESPONSE TIME
+# response is correct/false (1/0)
+load Data\\dat*.txt
+save Results\\constrained\\*.par
+log parameterConstr.lst" %>%
+  cat(
+    file = "fastDM/model_ks_congr_corrConstr.ctl"
+  )
+
+
 ```
 
 The parameter estimation for the diffusion model was computed outside R, using fast-dm.exe within a cmd console.
-The command executed was: fast-dm.exe model_ks_congr_corr.ctl
+The command executed was: "fast-dm.exe model" with model being one of the .ctl model files above.
 Note that this command was executed within the fastDM folder, so that the data is correctly loaded.
-The code below should do the same, but sadly does not seem to output the progress, making the slow process more difficult to overview.
+The code below should do the same from within R, but sadly does not seem to output the progress, making the slow process quite difficult to overview and follow.
 
 ```{r PowerShell, options}
 
 # shell("cd fastDM; .\\fast-dm.exe .\\model_ks_congr_corr.ctl",shell = "PowerShell", intern=TRUE)
+
+# shell("cd fastDM; .\\fast-dm.exe .\\model_ks_congr_corrConstr.ctl",shell="PowerShell",intern=TRUE)
 
 ```
 
@@ -689,31 +714,37 @@ The code below should do the same, but sadly does not seem to output the progres
 ### Data Wrangling
 #########################
 
-Note, I could've, way easier, just imported the "parameter.lst" text document, which is formatted as my 
 
-```{r import, options}
+```{r import & wrangling, options}
 
-RAWDIFF <- "fastDM/Results/sv0" %>%
-  list.files(full.names = TRUE) %>%
-  ldply(
-    function(x) {
-      read.delim(
-        x,
-        header=FALSE,
-        sep = "="
-      ) %>%
-        mutate(
-          Subject = gsub("\\D|(sv0)","",x)
-        ) %>%
-        mutate_all(
-          funs(
-            gsub(" ","",.)
-          )
-        )
-    }
-  )
+dfDiff01 <- "fastDM/parameter.lst" %>%
+  read.delim(sep="") %>%
+  gather("key","Value",matches("_")) %>%
+  separate(key,c("Parameter","Congruency"),sep="_") %>%
+  mutate(
+     Congruency = Congruency %>%
+      recode(
+        "0" = "Congruent",
+        "1" = "Incongruent",
+        "2" = "Neutral",
+        "3" = "Ambivalent"
+      ) %>% factor(levels = c("Ambivalent","Congruent","Incongruent","Neutral")),
+    Subject = dataset %>% factor,
+    Value = Value %>% as.numeric
+  ) %>%
+  select(Subject,everything(),-dataset) %>%
+  group_by(Parameter) %>%
+  mutate(zValue = Value %>% scale) %>%
+  ungroup %>%
+  arrange(Subject,Parameter,Congruency)
 
 ```
+
+Explanations:
+  a, szr, st0 - parameters diffusion, constant over conditions
+  penalty - values >0 indicate no valid solution
+  fit - method=KS :: p-value from KS test (maximization) | multiple conditions: p-values are multiplied | p is too liberal, since predictions are fit to data
+  time - duration of estimation process (seconds) 
 
 Reminder:
         "Congruent" = 0,
@@ -721,46 +752,33 @@ Reminder:
         "Neutral" = 2,
         "Ambivalent" = 3
 
-```{r wrangling, options}
-
-dfDiff <- RAWDIFF %>%
-  spread(V1,V2) %>%
-  select(-c("fitindex","method","penalty","precision")) %>%
-  gather(
-    "key",
-    "Value",
-    matches("_\\d")
-  ) %>%
-  separate(
-    key,
-    c("Parameter","Congruency")
-  ) %>%
-  mutate(
-    Congruency = Congruency %>%
-      recode(
-        "0" = "Congruent",
-        "1" = "Incongruent",
-        "2" = "Neutral",
-        "3" = "Ambivalent"
-      ) %>% factor(levels = c("Ambivalent","Congruent","Incongruent","Neutral")),
-    Subject = Subject %>% factor,
-    Value = Value %>% as.numeric
-    ) %>%
-  group_by(Parameter) %>%
-  mutate(zValue = Value %>% scale) %>%
-  ungroup
-
-```
-
-
 
 ################
 ### Model Fit
 ################
 
-```{r overview, options}
+```{r subject parameters, options}
 
-dfDiff %>%
+dfDiff01 %>%
+  summarize_at(
+    vars(a,szr,st0,penalty,fit,time),
+    funs(mean,sd,min,max)
+  ) %>%
+  gather("key","Value") %>%
+  separate(key,c("Parameter","Func")) %>%
+  spread(Func,Value) %>%
+  select(Parameter,mean,sd,min,max)
+
+```
+
+Note that both fit and penalty are 0 for all participants.
+Regarding penalty, this is a good sign.
+For fit, it is less clear of an indication, both since p-values are multiplied across multiple conditions, and value is too liberal, since the predictions are fit to the data themselves.
+
+
+```{r condition parameters, options}
+
+dfDiff01 %>%
   group_by(Parameter) %>%
   summarize_at(
     vars(Value,zValue),
@@ -769,28 +787,29 @@ dfDiff %>%
   gather("key","Value",-Parameter) %>%
   separate(key,c("Z","Func")) %>%
   spread(Func,Value) %>%
-  mutate(Z = Z == "zValue")
+  mutate(Z = Z == "zValue") %>%
+  select(Parameter,Z,mean,sd,min,max)
 
 ```
 
 ```{r dist graph, options}
 
-dfDiff %>%
+dfDiff01 %>%
   distinct(Subject,a) %>%
   ggplot(aes(x = a %>% as.numeric)) +
   geom_histogram(binwidth=0.1)
 
-dfDiff %>%
+dfDiff01 %>%
   distinct(Subject,st0) %>%
   ggplot(aes(x = st0 %>% as.numeric)) +
   geom_histogram(binwidth=0.1)
 
-dfDiff %>%
+dfDiff01 %>%
   distinct(Subject,szr) %>%
   ggplot(aes(x = szr %>% as.numeric)) +
   geom_histogram(binwidth=0.01)
 
-# dfDiff %>%
+# dfDiff01 %>%
 #   distinct(Subject,time) %>%
 #   ggplot(aes(x = time %>% as.numeric)) +
 #   geom_histogram(binwidth=100)
@@ -800,7 +819,7 @@ dfDiff %>%
 
 ```{r parameter dist graphs, options}
 
-dfDiff %>%
+dfDiff01 %>%
   filter(Parameter == "d") %>%
   ggplot(aes(x=zValue)) +
   facet_grid(~Congruency,scales="free_x",) +
@@ -808,14 +827,14 @@ dfDiff %>%
   geom_vline(xintercept = c(-3,3), colour = "red")
   
 
-dfDiff %>%
+dfDiff01 %>%
   filter(Parameter == "t0") %>%
  ggplot(aes(x=zValue)) +
   facet_grid(~Congruency,scales="free_x",) +
   geom_histogram(binwidth = .1) +
   geom_vline(xintercept = c(-3,3), colour = "red")
 
-dfDiff %>%
+dfDiff01 %>%
   filter(Parameter == "v") %>%
   ggplot(aes(x=zValue)) +
   facet_grid(~Congruency,scales="free_x",) +
@@ -829,55 +848,7 @@ dfDiff %>%
 #### Assessment of Model Fit
 ################################
 
-Predicted data through simulation within fast-dm?
-
-```{r Quantile Probability Plots, options}
-
-# 1 graph / participant (or for aggregated data)
-# Horizontal: Response probability for different conditions
-# Vertical: RT quantiles
-
-
-
-
-```
-
-```{r CDFs, options}
-
-# 1 graph / participant (or for aggregated data)
-# Horizontal: Response Time
-# Vertical: Cumulative Probability
-
-
-```
-
-```{r Scatterplots, options}
-
-# 1 graph / 1 statistic across participants and conditions
-# Horizontal: Data
-# Vertical: Prediction
-
-```
-
-```{r KS Test, options}
-
-# Comparison of observed and predicted CDFs (for each model)
-# Biased: predicted distribution is fitted to empirical data -> too liberal
-
-
-```
-
-```{r Chi² Test, options}
-
-# Comparison of observed vs. predicted number of observations in RT bins (for each model)
-# df = C * 11 - P
-# Problems with low error rates
-
-```
-
-#####################
-#### MC-Simulations
-#####################
+The assessment of model fit with Monto Carlo simulations has the advantage that it leads to a clear criterion for which participants there is a satisfactory model fit. To this end, a critical value for an acceptable fit has to be determined. This critical value will depend on the number of trials, conditions, and parameters, on the estimation procedure, and possibly as well on the observed range of parameter values. Therefore, datasets have to be simulated that match the empirical data sets as closely as possible. It is recommended to draw at least 1000 parameter sets from a multidimensional normal distribution defined by the covariance matrix of the estimated parameter values. This can be accomplished, for example, by the mvtnorm library from the R environment. Then, for each of the 1000 parameter-sets one data set is simulated. The construct-sample tool of fast-dm can be used for this purpose (see below; note that each condition must be simulated separately and combined later into one file). In the next step, simulated parameter sets are entered into a diffusion model analysis with the same settings as used for the analysis of empirical data. From the results, only the fit indices are of importance: The 5% quantile of the distribution of fit indices is then used as critical value to assess fit of empirical results: All datasets performing worse than this 5% criterion should be regarded as bad fitting. If notably more than 5% of datasets show bad fit, it should be questioned critically whether the diffusion model is suitable for the task.
 
 Simulate many data-sets from the diffusion model
 - use estimated (or similar) parameter values
@@ -893,12 +864,55 @@ conditions: 4
 trials: 192
 trials/conditions: 48
 
+covariance matrix of the estimated parameter values
 
 ```{r Parameters MC-Simulations, options}
 
+dfDiff01 %>%
+  select(-zValue) %>%
+  spread(Parameter,Value) %>%
+  select(
+    -c(Subject,penalty,fit,time,method)
+  ) %T>% {
+    ddply(
+      .,
+      ~ Congruency,
+      function(x) select(x,-Congruency) %>% cov
+    ) %>% {
+      set_names(
+        llply(
+          .data = unique(.$Congruency),
+          function(x) filter(.,Congruency == x) %>% select(-Congruency) %>% as.matrix
+        ),
+        unique(.$Congruency)
+      )
+    } %>%
+      assign("covDiff01",.,envir = globalenv())
+  } %>%
+  dlply(
+    ~ Congruency,
+    function(x) select(x,-Congruency) %>% colMeans %>% as.matrix %>% t
+  ) %>%
+  assign("meansDiff01",.,envir=globalenv())
 
+library(mvtnorm)
 
-
+set.seed(20190111)
+rmvPars01 <- c("Ambivalent","Congruent","Incongruent","Neutral") %>%
+  set_names(
+    llply(
+      .,
+      function(x) {
+        rmvnorm(
+          n = 250,
+          mean = meansDiff01 %>% extract2(x),
+          sigma = covDiff01 %>% extract2(x),
+          method = "chol"
+        )
+      }
+    ),
+  .
+)
 
 ```
 
@@ -906,7 +920,18 @@ trials/conditions: 48
 
 ```{r PowerShell, options}
 
+# Ambivalent
 # shell("cd fastDM; .\\construct-samples.exe -a xxx -v xxx -t xxx -d xxx -Z -V -T -p -n 192 -N 1000 -r -o "%d.sim" ",shell = "PowerShell", intern=TRUE)
+
+# Congruent
+# shell("cd fastDM; .\\construct-samples.exe -a xxx -v xxx -t xxx -d xxx -Z -V -T -p -n 192 -N 1000 -r -o "%d.sim" ",shell = "PowerShell", intern=TRUE)
+
+# Incongruent
+# shell("cd fastDM; .\\construct-samples.exe -a xxx -v xxx -t xxx -d xxx -Z -V -T -p -n 192 -N 1000 -r -o "%d.sim" ",shell = "PowerShell", intern=TRUE)
+
+# Neutral
+# shell("cd fastDM; .\\construct-samples.exe -a xxx -v xxx -t xxx -d xxx -Z -V -T -p -n 192 -N 1000 -r -o "%d.sim" ",shell = "PowerShell", intern=TRUE)
+
 
 ```
 
@@ -916,8 +941,8 @@ trials/conditions: 48
 ### Parameter Analyses
 #########################
 
-You could do this via group_by(Parameter) %>% do(), but I can't get to save the mixed objects this way, do expects dataframes of some sort.
-The lapply version does seem to work :)
+You could do this via group_by(Parameter) %>% do(), but I can't get to save the mixed objects this way, do() expects dataframes of some sort.
+The lapply version does work.
 
 ```{r model, options}
 
@@ -926,8 +951,8 @@ afex::set_effects_contrasts()
 lapply(
   c("d","t0","v"),
   function(x) {
-    assign(paste0("Fit_",x),
-      dfDiff %>%
+    assign(paste0("Fit01_",x),
+      dfDiff01 %>%
         filter(Parameter == x) %>%
         mixed(
           Value ~ Congruency + (1|Subject),
@@ -944,15 +969,15 @@ lapply(
 
 ```{r emmeans & contrasts, options}
 
-Fit_d %>%
+Fit01_d %>%
   emmeans(~Congruency) %>%
   contrast(method="trt.vs.ctrl",adjust="none")
 
-Fit_t0 %>%
+Fit01_t0 %>%
   emmeans(~Congruency) %>%
   contrast(method="trt.vs.ctrl",adjust="none")
 
-Fit_v %>%
+Fit01_v %>%
   emmeans(~Congruency) %>%
   contrast(method="trt.vs.ctrl",adjust="none")
 
@@ -961,21 +986,21 @@ Fit_v %>%
 
 ```{r ANOVA, options}
 
-dfDiff %>%
+dfDiff01 %>%
   filter(Parameter == "d") %>%
   aov(
     Value ~ Congruency,
     data=.
   ) %>% summary
 
-dfDiff %>%
+dfDiff01 %>%
   filter(Parameter == "t0") %>%
   aov(
     Value ~ Congruency,
     data=.
   ) %>% summary
 
-dfDiff %>%
+dfDiff01 %>%
   filter(Parameter == "v") %>%
   aov(
     Value ~ Congruency,
