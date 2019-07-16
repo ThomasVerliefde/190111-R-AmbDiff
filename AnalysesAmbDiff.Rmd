@@ -18,7 +18,7 @@ rm(list=ls())
 ```{r libraries, include=FALSE}
 lapply(
   c("plyr","dplyr","tidyr","ggplot2","readxl","readr","lme4","afex","lmerTest",
-    "emmeans","purrr","magrittr","cowplot","stringr","rstan"),
+    "emmeans","purrr","magrittr","cowplot","stringr","rstan","mvtnorm"),
   require,
   character.only = T
 )
@@ -718,7 +718,7 @@ The code below should do the same from within R, but sadly does not seem to outp
 ```{r import & wrangling, options}
 
 dfDiff01 <- "fastDM/parameter.lst" %>%
-  read.delim(sep="") %>%
+  read.table %>%
   gather("key","Value",matches("_")) %>%
   separate(key,c("Parameter","Congruency"),sep="_") %>%
   mutate(
@@ -737,6 +737,29 @@ dfDiff01 <- "fastDM/parameter.lst" %>%
   mutate(zValue = Value %>% scale) %>%
   ungroup %>%
   arrange(Subject,Parameter,Congruency)
+
+
+dfDiff02 <- "fastDM/parameterConstr.lst" %>%
+  read.table %>%
+  gather("key","Value",matches("_")) %>%
+  separate(key,c("Parameter","Congruency"),sep="_") %>%
+  mutate(
+    Congruency = Congruency %>%
+      recode(
+        "0" = "Congruent",
+        "1" = "Incongruent",
+        "2" = "Neutral",
+        "3" = "Ambivalent"
+      ) %>% factor(levels = c("Ambivalent","Congruent","Incongruent","Neutral")),
+    Subject = dataset %>% factor,
+    Value = Value %>% as.numeric
+  ) %>%
+  select(Subject,everything(),-dataset) %>%
+  group_by(Parameter) %>%
+  mutate(zValue = Value %>% scale) %>%
+  ungroup %>%
+  arrange(Subject,Parameter,Congruency)
+  
 
 ```
 
@@ -761,7 +784,17 @@ Reminder:
 
 dfDiff01 %>%
   summarize_at(
-    vars(a,szr,st0,penalty,fit,time),
+    vars(a,szr,st0,penalty,fit),
+    funs(mean,sd,min,max)
+  ) %>%
+  gather("key","Value") %>%
+  separate(key,c("Parameter","Func")) %>%
+  spread(Func,Value) %>%
+  select(Parameter,mean,sd,min,max)
+
+dfDiff02 %>%
+  summarize_at(
+    vars(a,penalty,fit),
     funs(mean,sd,min,max)
   ) %>%
   gather("key","Value") %>%
@@ -773,12 +806,26 @@ dfDiff01 %>%
 
 Note that both fit and penalty are 0 for all participants.
 Regarding penalty, this is a good sign.
-For fit, it is less clear of an indication, both since p-values are multiplied across multiple conditions, and value is too liberal, since the predictions are fit to the data themselves.
+For fit, it is less clear of an indication, both since p-values are multiplied across multiple conditions,
+and value is too liberal, since the predictions are fit to the data themselves.
+Especially the multiplication of 4 values between 0 and 1 automatically causes the resulted value to be quite small.
 
 
 ```{r condition parameters, options}
 
 dfDiff01 %>%
+  group_by(Parameter) %>%
+  summarize_at(
+    vars(Value,zValue),
+    funs(mean,sd,min,max)
+  ) %>%
+  gather("key","Value",-Parameter) %>%
+  separate(key,c("Z","Func")) %>%
+  spread(Func,Value) %>%
+  mutate(Z = Z == "zValue") %>%
+  select(Parameter,Z,mean,sd,min,max)
+
+dfDiff02 %>%
   group_by(Parameter) %>%
   summarize_at(
     vars(Value,zValue),
@@ -809,37 +856,121 @@ dfDiff01 %>%
   ggplot(aes(x = szr %>% as.numeric)) +
   geom_histogram(binwidth=0.01)
 
-# dfDiff01 %>%
-#   distinct(Subject,time) %>%
-#   ggplot(aes(x = time %>% as.numeric)) +
-#   geom_histogram(binwidth=100)
-
 ```
 
+
+```{r dist graph 02, options}
+
+dfDiff02 %>%
+  distinct(Subject,a) %>%
+  ggplot(aes(x = a %>% as.numeric)) +
+  geom_histogram(binwidth=0.1)
+
+curve(dbeta(x,.5,.5))
+
+```
 
 ```{r parameter dist graphs, options}
 
 dfDiff01 %>%
   filter(Parameter == "d") %>%
   ggplot(aes(x=zValue)) +
-  facet_grid(~Congruency,scales="free_x",) +
+  facet_wrap(~Congruency,scales="free_x",strip.position = "bottom") +
+  labs(x = "d Parameter", y = NULL, title = "Distribution of Scaled Parameters by Condition") +
   geom_histogram(binwidth = .1) +
-  geom_vline(xintercept = c(-3,3), colour = "red")
-  
+  geom_vline(xintercept = c(-3,3), colour = "red") +
+  theme(
+    panel.spacing.x = unit(01,"lines"),
+    strip.background = element_blank(),
+    strip.placement = "outside",
+    strip.text = element_text(margin = margin(0.15,0,0.15,0,unit="cm"))
+  )
 
 dfDiff01 %>%
   filter(Parameter == "t0") %>%
- ggplot(aes(x=zValue)) +
-  facet_grid(~Congruency,scales="free_x",) +
+  ggplot(aes(x=zValue)) +
+  facet_wrap(~Congruency,scales="free_x",strip.position = "bottom") +
+  labs(x = "t0 Parameter", y = NULL, title = "Distribution of Scaled Parameters by Condition") +
   geom_histogram(binwidth = .1) +
-  geom_vline(xintercept = c(-3,3), colour = "red")
+  geom_vline(xintercept = c(-3,3), colour = "red") +
+  theme(
+    panel.spacing.x = unit(01,"lines"),
+    strip.background = element_blank(),
+    strip.placement = "outside",
+    strip.text = element_text(margin = margin(0.15,0,0.15,0,unit="cm"))
+  )
 
 dfDiff01 %>%
   filter(Parameter == "v") %>%
   ggplot(aes(x=zValue)) +
-  facet_grid(~Congruency,scales="free_x",) +
+  facet_wrap(~Congruency,scales="free_x",strip.position = "bottom") +
+  labs(x = "v Parameter", y = NULL, title = "Distribution of Scaled Parameters by Condition") +
   geom_histogram(binwidth = .1) +
-  geom_vline(xintercept = c(-3,3), colour = "red")
+  geom_vline(xintercept = c(-3,3), colour = "red") +
+  theme(
+    panel.spacing.x = unit(01,"lines"),
+    strip.background = element_blank(),
+    strip.placement = "outside",
+    strip.text = element_text(margin = margin(0.15,0,0.15,0,unit="cm"))
+  )
+
+```
+
+```{r parameter dist graphs 02, options}
+
+dfDiff02 %>%
+  # filter(Parameter == "d") %>%
+  ggplot(aes(x=zValue)) +
+  facet_wrap(vars(Parameter,Congruency),scales="free") +
+  labs(x = "z-Score", y = NULL, title = "Distribution of Scaled Parameters by Condition") +
+  geom_histogram(binwidth = .1) +
+  geom_vline(xintercept = c(-3,3), colour = "red") +
+  theme(
+    panel.spacing.x = unit(01,"lines"),
+    strip.background = element_blank(),
+    strip.placement = "outside",
+    strip.text = element_text(margin = margin(0.15,0,0.15,0,unit="cm")),
+    axis.line.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.y = element_blank()
+  )
+
+# dfDiff02 %>%
+#   ggplot(aes(x=zValue)) +
+#   facet_grid(rows = vars(Parameter), cols = vars(Congruency),scales = "free",switch = "y",space="free") +
+#   labs(x = "z-Score", y = NULL, title = "Distribution of Scaled Parameters by Condition") +
+#   geom_histogram(binwidth = .1) +
+#   geom_vline(xintercept = c(-3,3), colour = "red") +
+#   theme(
+#     panel.spacing.x = unit(01,"lines"),
+#     strip.background = element_blank(),
+#     strip.placement = "outside",
+#     strip.text = element_text(margin = margin(0.15,0,0.15,0,unit="cm")),
+#     axis.line.y = element_blank(),
+#     axis.ticks.y = element_blank(),
+#     axis.text.y = element_blank()
+#   )
+
+```
+
+
+Graphically, we can see a few extreme values for the d-parameter.
+
+```{r Bad fitting Subjects, options}
+
+dfDiff02 %>%
+  filter(abs(zValue) >= 3)
+
+```
+
+Subjects 40 has the two extreme values for the d-parameter, and will be excluded.
+
+```{r Exclusion, options}
+
+dfDiff02 %<>%
+  mutate(
+    Inclusion = !(Subject %in% c(40))
+  )
 
 ```
 
@@ -868,7 +999,7 @@ covariance matrix of the estimated parameter values
 
 ```{r Parameters MC-Simulations, options}
 
-dfDiff01 %>%
+dfDiff02 %>%
   select(-zValue) %>%
   spread(Parameter,Value) %>%
   select(
@@ -887,28 +1018,32 @@ dfDiff01 %>%
         unique(.$Congruency)
       )
     } %>%
-      assign("covDiff01",.,envir = globalenv())
+      assign("covDiff02",.,envir = globalenv())
   } %>%
   dlply(
     ~ Congruency,
     function(x) select(x,-Congruency) %>% colMeans %>% as.matrix %>% t
   ) %>%
-  assign("meansDiff01",.,envir=globalenv())
-
-library(mvtnorm)
+  assign("meansDiff02",.,envir=globalenv())
 
 set.seed(20190111)
-rmvPars01 <- c("Ambivalent","Congruent","Incongruent","Neutral") %>%
+rmvPars02 <- c("Ambivalent","Congruent","Incongruent","Neutral") %>%
   set_names(
     llply(
       .,
       function(x) {
         rmvnorm(
           n = 250,
-          mean = meansDiff01 %>% extract2(x),
-          sigma = covDiff01 %>% extract2(x),
+          mean = meansDiff02 %>% extract2(x),
+          sigma = covDiff02 %>% extract2(x),
           method = "chol"
-        )
+        ) %>%
+          set_colnames(
+            meansDiff02 %>%
+              extract2(x) %>%
+              colnames
+          ) %>%
+          as_tibble
       }
     ),
   .
@@ -916,33 +1051,124 @@ rmvPars01 <- c("Ambivalent","Congruent","Incongruent","Neutral") %>%
 
 ```
 
+```{r batch file, options}
 
+rmvPars02 %>% {
+  set_names(
+    llply(
+      names(.),
+      function(x) {
+        extract2(.,x) %>%
+          alply(
+            .margins = 1,
+            function(y) {
+              y %$%
+                sprintf(
+                  "construct-samples.exe -a %f -d %f -t %f -v %f -p %f -N 1 -n 48 -r -o %s",
+                  a,d,t=t0,v,p=3,paste0("Sim/constr/",x,"/")
+                )
+            }
+          ) %>% {
+            llply(
+              names(.),
+              function(z) {
+                extract2(.,z) %>%
+                  paste0(z,".sim")
+              }
+            )
+          }
+      }
+    ),names(.)
+  )
+} %>% unlist %>%
+  write_lines(
+    path = "fastDM/constrSim.cmd"
+  )
 
-```{r PowerShell, options}
-
-# Ambivalent
-# shell("cd fastDM; .\\construct-samples.exe -a xxx -v xxx -t xxx -d xxx -Z -V -T -p -n 192 -N 1000 -r -o "%d.sim" ",shell = "PowerShell", intern=TRUE)
-
-# Congruent
-# shell("cd fastDM; .\\construct-samples.exe -a xxx -v xxx -t xxx -d xxx -Z -V -T -p -n 192 -N 1000 -r -o "%d.sim" ",shell = "PowerShell", intern=TRUE)
-
-# Incongruent
-# shell("cd fastDM; .\\construct-samples.exe -a xxx -v xxx -t xxx -d xxx -Z -V -T -p -n 192 -N 1000 -r -o "%d.sim" ",shell = "PowerShell", intern=TRUE)
-
-# Neutral
-# shell("cd fastDM; .\\construct-samples.exe -a xxx -v xxx -t xxx -d xxx -Z -V -T -p -n 192 -N 1000 -r -o "%d.sim" ",shell = "PowerShell", intern=TRUE)
-
+cmdPars01 %>%
+  write_lines(
+    path = "fastDM/constrSim.cmd"
+  )
 
 ```
 
+This batch file was then executed via a cmd in the fastDM folder.
 
+```{r sims, options}
+
+simDiff02 <- c("Ambivalent","Congruent","Incongruent","Neutral") %>% 
+  ldply(
+    function(x) {
+      list.files(paste0("fastDM/Sim/constr/",x),full.names=TRUE) %>%
+        ldply(
+          function(y) {
+            read.table(y) %>%
+              mutate(Subject = gsub("\\D","",y) %>% as.numeric)
+          }
+        ) %>%
+        mutate(Congruency = x)
+    }
+  )
+
+"method ks
+# using Kolmogorov-Smirnov statistic
+set zr 0.5
+set sv 0
+set szr 0
+set st0 0
+set p 0
+# fixing z relative to a at 0.5
+# a, sz, sv, st assumed constant across conditions for parsimony and computational speed, additionally, only a will be estimated
+depends v Congruency
+depends d Congruency
+depends t0 Congruency
+# allowing v, d, & t0 to vary between conditions
+format RESPONSE TIME Congruency
+# response is correct/false (1/0)
+load Sim\\constr\\Combined\\dat*.txt
+save Sim\\constr\\Results*.par
+log parameterConstr.lst" %>%
+  cat(
+    file = "fastDM/model_ks_congr_corrSims.ctl"
+  )
+
+simDiff02 %>%
+  d_ply(
+    ~ Subject,
+    function(x) {
+      write(
+        "# Response RT Congruency",
+        paste0("fastDM/Sim/constr/Combined/dat",x$Subject %>% unique,".txt")
+      )
+      write.table(
+        x %>% select(-Subject),
+        paste0("fastDM/Sim/constr/Combined/dat",x$Subject %>% unique,".txt"),
+        sep = " ",
+        append = TRUE,
+        row.names=FALSE,
+        quote=FALSE,
+        col.names=FALSE
+      )
+    }
+  )
+
+```
+
+```{r label, options}
+
+simDiff02 %>%
+  count(Subject,V1,Congruency) %>%
+  filter(n != 48)
+
+```
 
 #########################
 ### Parameter Analyses
 #########################
 
-You could do this via group_by(Parameter) %>% do(), but I can't get to save the mixed objects this way, do() expects dataframes of some sort.
-The lapply version does work.
+##########################################################################
+#### First model - with estimates for inter-trial z and t0 variability
+##########################################################################
 
 ```{r model, options}
 
@@ -1009,9 +1235,98 @@ dfDiff01 %>%
 
 ```
 
+#########################################################
+#### Second Model - fixed inter trial variabilities to 0
+#########################################################
+
+```{r model, options}
+
+afex::set_effects_contrasts()
+lapply(
+  c("d","t0","v"),
+  function(x) {
+    assign(paste0("Fit02_",x),
+      dfDiff02 %>%
+        filter(Inclusion) %>%
+        filter(Parameter == x) %>%
+        mixed(
+          Value ~ Congruency + (1|Subject),
+          data = .,
+          method = "KR",
+          test_intercept = TRUE
+        ),
+      envir = globalenv()
+    )
+  }
+)
+
+```
+
+```{r emmeans & contrasts, options}
+
+Fit02_d %>%
+  emmeans(~Congruency)
+
+Fit02_t0 %>%
+  emmeans(~Congruency)
+
+Fit02_v %>%
+  emmeans(~Congruency)
+
+Fit02_d %>%
+  emmeans(~Congruency) %>%
+  contrast(method="trt.vs.ctrl",adjust="none")
+
+Fit02_t0 %>%
+  emmeans(~Congruency) %>%
+  contrast(method="trt.vs.ctrl",adjust="none")
+
+Fit02_v %>%
+  emmeans(~Congruency) %>%
+  contrast(method="trt.vs.ctrl",adjust="none")
+
+Fit02_d %>%
+  emmeans(~Congruency) %>%
+  contrast(method="pairwise",include = c("Congruent","Incongruent"),adjust="none")
+
+Fit02_t0 %>%
+  emmeans(~Congruency) %>%
+  contrast(method="pairwise",include = c("Congruent","Incongruent"),adjust="none")
+
+Fit02_v %>%
+  emmeans(~Congruency) %>%
+  contrast(method="pairwise",include = c("Congruent","Incongruent"),adjust="none")
+
+```
 
 
+```{r ANOVA, options}
 
+dfDiff02 %>%
+  filter(Inclusion) %>%
+  filter(Parameter == "d") %>%
+  aov(
+    Value ~ Congruency,
+    data=.
+  ) %>% summary
+
+dfDiff02 %>%
+  filter(Inclusion) %>%
+  filter(Parameter == "t0") %>%
+  aov(
+    Value ~ Congruency,
+    data=.
+  ) %>% summary
+
+dfDiff02 %>%
+  filter(Inclusion) %>%
+  filter(Parameter == "v") %>%
+  aov(
+    Value ~ Congruency,
+    data=.
+  ) %>% summary
+
+```
 
 
 
