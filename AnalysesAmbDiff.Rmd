@@ -199,7 +199,7 @@ df %>%
   mean(Correct) %>%
   subtract(1,.) %>%
   multiply_by(100) %>%
-  signif(2) %>%
+  signif(4) %>%
   paste0("% of trials from included participants were incorrectly categorised.")
 
 df %>%
@@ -207,21 +207,36 @@ df %>%
   mean(latencyIncl) %>%
   subtract(1,.) %>%
   multiply_by(100) %>%
-  signif(2) %>%
+  signif(4) %>%
   paste0("% of trials from included participants were responded to either too quickly (<300ms) or too slowly (>3000ms)")
+
+df %>%
+  filter(subjIncl)  %$%
+  mean(RT > 3000) %>%
+  multiply_by(100) %>%
+  signif(3) %>%
+  paste0("% of trials from included participants were responed to too slowly (>3000ms)")
+
+df %>%
+  filter(subjIncl) %$%
+  mean(RT < 300) %>%
+  multiply_by(100) %>%
+  signif(3) %>%
+  paste0("% of trials from included participants were responed to too quickly (<300ms)")
+
 
 df %>%
   filter(subjIncl) %$%
   mean(trialIncl) %>%
   multiply_by(100) %>%
-  signif(2) %>%
+  signif(4) %>%
   paste0("% of trials from included participants were ultimately included for hierarchical analyses, based on speed and accuracy.")
 
 df %>%
   filter(subjIncl) %$%
   mean(latencyIncl) %>%
   multiply_by(100) %>%
-  signif(2) %>%
+  signif(4) %>%
   paste0("% of trials from included participants were ultimately included for diffusion analyses, based on speed and accuracy.")
 
 ```
@@ -230,6 +245,41 @@ df %>%
 ############
 # Analyses 
 ############
+
+```{r Corr Accuracy, options}
+
+df %>%
+  filter(RT > 300 & RT < 3000) %$%
+  t.test(RT,Correct)
+
+df %>%
+  filter(RT > 300 & RT < 3000) %>%
+  group_by(Correct) %>%
+  summarize(avgRT = mean(RT)) %>%
+  ggplot(aes(x = Correct, y = avgRT)) +
+  geom_col()
+
+df %>%
+  filter(Correct) %>%
+  ggplot(aes(x=RT)) +
+  geom_histogram(binwidth = 10)
+
+df %>%
+  filter(Correct %>% not) %>%
+  ggplot(aes(x=RT)) +
+  geom_histogram(binwidth = 10)
+
+df %>%
+  filter(Correct %>% not) %>%
+  filter(RT < 3000) %>%
+  ggplot(aes(x=RT)) +
+  geom_histogram(binwidth = 10)
+
+
+```
+
+
+
 
 ################
 ## Hierarchical
@@ -242,7 +292,6 @@ For this, we run a mixed model.
 ```{r Valence Model, options}
 
 afex::set_effects_contrasts()
-
 valFit <- df %>%
   filter(Inclusion) %>%
   mixed(
@@ -405,7 +454,6 @@ emmValFit %>% contrast(method = "trt.vs.ctrlk", by=c("targetValence"))
 ```{r Congruency Model, options}
 
 afex::set_effects_contrasts()
-
 congrFit <- df %>%
   filter(Inclusion) %>%
   mixed(
@@ -427,11 +475,28 @@ contrCongrFit <- emmCongrFit %>%
     c("primeA","primeB")
   )
 
+emmCongrFit %>%
+  contrast(method = "trt.vs.ctrl",ref=3,adjust="none")
+
+emmCongrFit %>%
+  contrast(method="trt.vs.ctrl",adjust="none")
+
 congrFit %>%
   emmeans(~Block) %>%
   contrast
 
 ```
+
+ contrast                 estimate      SE  df z.ratio p.value
+ Ambivalent - Incongruent -0.00419 0.00538 Inf -0.779  0.4357 
+ Congruent - Incongruent  -0.02493 0.00504 Inf -4.946  <.0001 
+ Neutral - Incongruent    -0.01499 0.00537 Inf -2.791  0.0053 
+
+ contrast                 estimate      SE  df z.ratio p.value
+ Congruent - Ambivalent   -0.02074 0.00534 Inf -3.884  0.0001 
+ Incongruent - Ambivalent  0.00419 0.00538 Inf  0.779  0.4357 
+ Neutral - Ambivalent     -0.01080 0.00545 Inf -1.982  0.0474 
+ 
 
 Comparing directly on congruency, the same results are found, with ambivalent trials being clearly slower than congruent trials.
 Note that here there seems to be a difference between neutral and ambivalent primes, indicating ambivalent primes being slower.
@@ -583,6 +648,10 @@ space or tab separated
 ### Diff Model
 ################
 
+Note, the diffusion parameter estimation is performed using fast-DM outside of R.
+Fast-dm expects the data to be in a certain format.
+Crucially, reaction times should be in seconds.
+
 ```{r Data Diffusion, options}
 
 outDiff <- df %>%
@@ -618,13 +687,13 @@ outDiff <- df %>%
         "Positive" = 0,
         "Negative" = 1
       ),
-    Correct = Correct %>% as.numeric
+    Correct = Correct %>% as.numeric,
+    RT = RT %>% divide_by(1000)
   )
 
 ```
 
-Note, the diffusion parameter estimation is performed using fast-DM outside of R.
-For this, 
+
 
 ```{r Write Diffusion, options}
 
@@ -654,6 +723,7 @@ outDiff %>%
 
 "method ks
 # using Kolmogorov-Smirnov statistic
+precision 3
 set zr 0.5
 set p 0
 # fixing z relative to a at 0.5
@@ -665,33 +735,33 @@ depends t0 Congruency
 format * * * * Congruency * RESPONSE TIME
 # response is correct/false (1/0)
 load Data\\dat*.txt
-save Results\\sv0\\*.par
-log parameterFree.lst" %>%
+save Results\\Full\\*.par
+log parameterFull.lst" %>%
   cat(
-    file = "fastDM/model_ks_congr_corr.ctl"
+    file = "fastDM/model_ks_congr_corrFull.ctl"
   )
 
-"method ks
-# using Kolmogorov-Smirnov statistic
-set zr 0.5
-set sv 0
-set szr 0
-set st0 0
-set p 0
-# fixing z relative to a at 0.5
-# a, sz, sv, st assumed constant across conditions for parsimony and computational speed, additionally, only a will be estimated
-depends v Congruency
-depends d Congruency
-depends t0 Congruency
-# allowing v, d, & t0 to vary between conditions
-format * * * * Congruency * RESPONSE TIME
-# response is correct/false (1/0)
-load Data\\dat*.txt
-save Results\\constrained\\*.par
-log parameterConstr.lst" %>%
-  cat(
-    file = "fastDM/model_ks_congr_corrConstr.ctl"
-  )
+# "method ks
+# # using Kolmogorov-Smirnov statistic
+# set zr 0.5
+# set sv 0
+# set szr 0
+# set st0 0
+# set p 0
+# # fixing z relative to a at 0.5
+# # a, sz, sv, st assumed constant across conditions for parsimony and computational speed, additionally, only a will be estimated
+# depends v Congruency
+# depends d Congruency
+# depends t0 Congruency
+# # allowing v, d, & t0 to vary between conditions
+# format * * * * Congruency * RESPONSE TIME
+# # response is correct/false (1/0)
+# load Data\\dat*.txt
+# save Results\\Constr\\*.par
+# log parameterConstr.lst" %>%
+#   cat(
+#     file = "fastDM/model_ks_congr_corrConstr.ctl"
+#   )
 
 
 ```
@@ -717,8 +787,8 @@ The code below should do the same from within R, but sadly does not seem to outp
 
 ```{r import & wrangling, options}
 
-dfDiff01 <- "fastDM/parameter.lst" %>%
-  read.table %>%
+dfDiff01 <- "fastDM/parameterFull.lst" %>%
+  read.table(header=TRUE) %>%
   gather("key","Value",matches("_")) %>%
   separate(key,c("Parameter","Congruency"),sep="_") %>%
   mutate(
@@ -739,32 +809,32 @@ dfDiff01 <- "fastDM/parameter.lst" %>%
   arrange(Subject,Parameter,Congruency)
 
 
-dfDiff02 <- "fastDM/parameterConstr.lst" %>%
-  read.table %>%
-  gather("key","Value",matches("_")) %>%
-  separate(key,c("Parameter","Congruency"),sep="_") %>%
-  mutate(
-    Congruency = Congruency %>%
-      recode(
-        "0" = "Congruent",
-        "1" = "Incongruent",
-        "2" = "Neutral",
-        "3" = "Ambivalent"
-      ) %>% factor(levels = c("Ambivalent","Congruent","Incongruent","Neutral")),
-    Subject = dataset %>% factor,
-    Value = Value %>% as.numeric
-  ) %>%
-  select(Subject,everything(),-dataset) %>%
-  group_by(Parameter) %>%
-  mutate(zValue = Value %>% scale) %>%
-  ungroup %>%
-  arrange(Subject,Parameter,Congruency)
+# dfDiff02 <- "fastDM/parameterConstr.lst" %>%
+#   read.table %>%
+#   gather("key","Value",matches("_")) %>%
+#   separate(key,c("Parameter","Congruency"),sep="_") %>%
+#   mutate(
+#     Congruency = Congruency %>%
+#       recode(
+#         "0" = "Congruent",
+#         "1" = "Incongruent",
+#         "2" = "Neutral",
+#         "3" = "Ambivalent"
+#       ) %>% factor(levels = c("Ambivalent","Congruent","Incongruent","Neutral")),
+#     Subject = dataset %>% factor,
+#     Value = Value %>% as.numeric
+#   ) %>%
+#   select(Subject,everything(),-dataset) %>%
+#   group_by(Parameter) %>%
+#   mutate(zValue = Value %>% scale) %>%
+#   ungroup %>%
+#   arrange(Subject,Parameter,Congruency)
   
 
 ```
 
 Explanations:
-  a, szr, st0 - parameters diffusion, constant over conditions
+  a, sv, szr, st0 - parameters diffusion, constant over conditions
   penalty - values >0 indicate no valid solution
   fit - method=KS :: p-value from KS test (maximization) | multiple conditions: p-values are multiplied | p is too liberal, since predictions are fit to data
   time - duration of estimation process (seconds) 
@@ -792,24 +862,20 @@ dfDiff01 %>%
   spread(Func,Value) %>%
   select(Parameter,mean,sd,min,max)
 
-dfDiff02 %>%
-  summarize_at(
-    vars(a,penalty,fit),
-    funs(mean,sd,min,max)
-  ) %>%
-  gather("key","Value") %>%
-  separate(key,c("Parameter","Func")) %>%
-  spread(Func,Value) %>%
-  select(Parameter,mean,sd,min,max)
+# dfDiff02 %>%
+#   summarize_at(
+#     vars(a,penalty,fit),
+#     funs(mean,sd,min,max)
+#   ) %>%
+#   gather("key","Value") %>%
+#   separate(key,c("Parameter","Func")) %>%
+#   spread(Func,Value) %>%
+#   select(Parameter,mean,sd,min,max)
 
 ```
 
-Note that both fit and penalty are 0 for all participants.
-Regarding penalty, this is a good sign.
-For fit, it is less clear of an indication, both since p-values are multiplied across multiple conditions,
-and value is too liberal, since the predictions are fit to the data themselves.
-Especially the multiplication of 4 values between 0 and 1 automatically causes the resulted value to be quite small.
-
+Penalty is 0 for all participants, which is good.
+Fit is more spread, although it is less clear what this means, since p-values are multiplied across multiple conditions, and value is too liberal, since the predictions are fit to the data themselves (specific to the KS method fit test).
 
 ```{r condition parameters, options}
 
@@ -825,17 +891,17 @@ dfDiff01 %>%
   mutate(Z = Z == "zValue") %>%
   select(Parameter,Z,mean,sd,min,max)
 
-dfDiff02 %>%
-  group_by(Parameter) %>%
-  summarize_at(
-    vars(Value,zValue),
-    funs(mean,sd,min,max)
-  ) %>%
-  gather("key","Value",-Parameter) %>%
-  separate(key,c("Z","Func")) %>%
-  spread(Func,Value) %>%
-  mutate(Z = Z == "zValue") %>%
-  select(Parameter,Z,mean,sd,min,max)
+# dfDiff02 %>%
+#   group_by(Parameter) %>%
+#   summarize_at(
+#     vars(Value,zValue),
+#     funs(mean,sd,min,max)
+#   ) %>%
+#   gather("key","Value",-Parameter) %>%
+#   separate(key,c("Z","Func")) %>%
+#   spread(Func,Value) %>%
+#   mutate(Z = Z == "zValue") %>%
+#   select(Parameter,Z,mean,sd,min,max)
 
 ```
 
@@ -844,12 +910,17 @@ dfDiff02 %>%
 dfDiff01 %>%
   distinct(Subject,a) %>%
   ggplot(aes(x = a %>% as.numeric)) +
-  geom_histogram(binwidth=0.1)
+  geom_histogram(binwidth=0.04)
+
+dfDiff01 %>%
+  distinct(Subject,sv) %>%
+  ggplot(aes(x = sv %>% as.numeric)) +
+  geom_histogram(binwidth=0.04)
 
 dfDiff01 %>%
   distinct(Subject,st0) %>%
   ggplot(aes(x = st0 %>% as.numeric)) +
-  geom_histogram(binwidth=0.1)
+  geom_histogram(binwidth=0.005)
 
 dfDiff01 %>%
   distinct(Subject,szr) %>%
@@ -918,22 +989,22 @@ dfDiff01 %>%
 
 ```{r parameter dist graphs 02, options}
 
-dfDiff02 %>%
-  # filter(Parameter == "d") %>%
-  ggplot(aes(x=zValue)) +
-  facet_wrap(vars(Parameter,Congruency),scales="free") +
-  labs(x = "z-Score", y = NULL, title = "Distribution of Scaled Parameters by Condition") +
-  geom_histogram(binwidth = .1) +
-  geom_vline(xintercept = c(-3,3), colour = "red") +
-  theme(
-    panel.spacing.x = unit(01,"lines"),
-    strip.background = element_blank(),
-    strip.placement = "outside",
-    strip.text = element_text(margin = margin(0.15,0,0.15,0,unit="cm")),
-    axis.line.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    axis.text.y = element_blank()
-  )
+# dfDiff02 %>%
+#   # filter(Parameter == "d") %>%
+#   ggplot(aes(x=zValue)) +
+#   facet_wrap(vars(Parameter,Congruency),scales="free") +
+#   labs(x = "z-Score", y = NULL, title = "Distribution of Scaled Parameters by Condition") +
+#   geom_histogram(binwidth = .1) +
+#   geom_vline(xintercept = c(-3,3), colour = "red") +
+#   theme(
+#     panel.spacing.x = unit(01,"lines"),
+#     strip.background = element_blank(),
+#     strip.placement = "outside",
+#     strip.text = element_text(margin = margin(0.15,0,0.15,0,unit="cm")),
+#     axis.line.y = element_blank(),
+#     axis.ticks.y = element_blank(),
+#     axis.text.y = element_blank()
+#   )
 
 # dfDiff02 %>%
 #   ggplot(aes(x=zValue)) +
@@ -954,25 +1025,25 @@ dfDiff02 %>%
 ```
 
 
-Graphically, we can see a few extreme values for the d-parameter.
+<!-- Graphically, we can see a few extreme values for the d-parameter. -->
 
-```{r Bad fitting Subjects, options}
+<!-- ```{r Bad fitting Subjects, options} -->
 
-dfDiff02 %>%
-  filter(abs(zValue) >= 3)
+<!-- dfDiff02 %>% -->
+<!--   filter(abs(zValue) >= 3) -->
 
-```
+<!-- ``` -->
 
-Subjects 40 has the two extreme values for the d-parameter, and will be excluded.
+<!-- Subjects 40 has the two extreme values for the d-parameter, and will be excluded. -->
 
-```{r Exclusion, options}
+<!-- ```{r Exclusion, options} -->
 
-dfDiff02 %<>%
-  mutate(
-    Inclusion = !(Subject %in% c(40))
-  )
+<!-- dfDiff02 %<>% -->
+<!--   mutate( -->
+<!--     Inclusion = !(Subject %in% c(40)) -->
+<!--   ) -->
 
-```
+<!-- ``` -->
 
 
 ################################
@@ -999,7 +1070,7 @@ covariance matrix of the estimated parameter values
 
 ```{r Parameters MC-Simulations, options}
 
-dfDiff02 %>%
+dfDiff01 %>%
   select(-zValue) %>%
   spread(Parameter,Value) %>%
   select(
@@ -1018,28 +1089,28 @@ dfDiff02 %>%
         unique(.$Congruency)
       )
     } %>%
-      assign("covDiff02",.,envir = globalenv())
+      assign("covDiff01",.,envir = globalenv())
   } %>%
   dlply(
     ~ Congruency,
     function(x) select(x,-Congruency) %>% colMeans %>% as.matrix %>% t
   ) %>%
-  assign("meansDiff02",.,envir=globalenv())
+  assign("meansDiff01",.,envir=globalenv())
 
 set.seed(20190111)
-rmvPars02 <- c("Ambivalent","Congruent","Incongruent","Neutral") %>%
+rmvPars01 <- c("Ambivalent","Congruent","Incongruent","Neutral") %>%
   set_names(
     llply(
       .,
       function(x) {
         rmvnorm(
           n = 250,
-          mean = meansDiff02 %>% extract2(x),
-          sigma = covDiff02 %>% extract2(x),
+          mean = meansDiff01 %>% extract2(x),
+          sigma = covDiff01 %>% extract2(x),
           method = "chol"
         ) %>%
           set_colnames(
-            meansDiff02 %>%
+            meansDiff01 %>%
               extract2(x) %>%
               colnames
           ) %>%
@@ -1053,7 +1124,7 @@ rmvPars02 <- c("Ambivalent","Congruent","Incongruent","Neutral") %>%
 
 ```{r batch file, options}
 
-rmvPars02 %>% {
+rmvPars01 %>% {
   set_names(
     llply(
       names(.),
@@ -1064,8 +1135,8 @@ rmvPars02 %>% {
             function(y) {
               y %$%
                 sprintf(
-                  "construct-samples.exe -a %f -d %f -t %f -v %f -p %f -N 1 -n 48 -r -o %s",
-                  a,d,t=t0,v,p=3,paste0("Sim/constr/",x,"/")
+                  "construct-samples.exe -a %f -Z %f -V %f -T %f -d %f -t %f -v %f -p %f -N 1 -n 48 -r -o %s",
+                  a,Z=szr,V=sv,T=st0,d,t=t0,v,p=3,paste0("Sim/Full/",x)
                 )
             }
           ) %>% {
@@ -1082,31 +1153,60 @@ rmvPars02 %>% {
   )
 } %>% unlist %>%
   write_lines(
-    path = "fastDM/constrSim.cmd"
-  )
-
-cmdPars01 %>%
-  write_lines(
-    path = "fastDM/constrSim.cmd"
+    path = "fastDM/fullSim.cmd"
   )
 
 ```
 
-This batch file was then executed via a cmd in the fastDM folder.
+This batch file was then executed via cmd in the fastDM folder (command: fullSim.cmd)
 
 ```{r sims, options}
 
-simDiff02 <- c("Ambivalent","Congruent","Incongruent","Neutral") %>% 
+simDiff01 <- c("Ambivalent","Congruent","Incongruent","Neutral") %>% 
   ldply(
     function(x) {
-      list.files(paste0("fastDM/Sim/constr/",x),full.names=TRUE) %>%
+      list.files("fastDM/Sim/Full/",x,full.names=TRUE) %>%
         ldply(
           function(y) {
             read.table(y) %>%
-              mutate(Subject = gsub("\\D","",y) %>% as.numeric)
+              transmute(
+                Subject = gsub("\\D","",y) %>% as.numeric,
+                Response = V1,
+                RT = V2,
+                )
           }
         ) %>%
         mutate(Congruency = x)
+    }
+  )
+
+simDiff01 %>%
+  filter(
+    !(
+      Subject %>% is_in(
+        simDiff01 %>%
+          count(Subject) %>%
+          filter(n != 192) %$%
+          Subject
+      ) 
+    )
+  ) %>%
+  d_ply(
+    ~ Subject,
+    function(x) {
+      write(
+        "# Response RT Congruency",
+        paste0("fastDM/Sim/Full/Data/dat",x$Subject %>% unique,".txt")
+      )
+      write.table(
+        x %>% select(-Subject),
+        paste0("fastDM/Sim/Full/Data/dat",x$Subject %>% unique,".txt"),
+        sep = " ",
+        append = TRUE,
+        row.names=FALSE,
+        quote=FALSE,
+        col.names=FALSE
+      )
     }
   )
 
@@ -1125,55 +1225,90 @@ depends t0 Congruency
 # allowing v, d, & t0 to vary between conditions
 format RESPONSE TIME Congruency
 # response is correct/false (1/0)
-load Sim\\constr\\Combined\\dat*.txt
-save Sim\\constr\\Results*.par
-log parameterConstr.lst" %>%
+load Sim\\Full\\Data\\dat*.txt
+save Sim\\Full\\Results*.par
+log parameterFullSim.lst" %>%
   cat(
-    file = "fastDM/model_ks_congr_corrSims.ctl"
+    file = "fastDM/model_ks_congr_corrFullSim.ctl"
   )
 
-simDiff02 %>%
-  d_ply(
-    ~ Subject,
-    function(x) {
-      write(
-        "# Response RT Congruency",
-        paste0("fastDM/Sim/constr/Combined/dat",x$Subject %>% unique,".txt")
-      )
-      write.table(
-        x %>% select(-Subject),
-        paste0("fastDM/Sim/constr/Combined/dat",x$Subject %>% unique,".txt"),
-        sep = " ",
-        append = TRUE,
-        row.names=FALSE,
-        quote=FALSE,
-        col.names=FALSE
-      )
-    }
-  )
+
 
 ```
 
-```{r label, options}
+I've opted to only use the data from full simulated participants (N = 202 out of 250), since (I assume) some parameter values (such as negative a values) are not functional within the diffusion framework, but were nevertheless computed randomly by the multivariate random distribution.
 
-simDiff02 %>%
-  count(Subject,V1,Congruency) %>%
-  filter(n != 48)
+As with our real data, diffusion model analyses were computed via cmd (fast-dm.exe model_ks_congr_corrFullSim.ctl)
+
+The 5% quantile of the distribution of fit indices is then used as critical value to assess fit of empirical results
+
+```{r fit-index, options}
+
+dfDiff01Sim <- "fastDM/parameterFullSim.lst" %>%
+  read.table(header=TRUE) %>%
+  gather("key","Value",matches("_")) %>%
+  separate(key,c("Parameter","Congruency"),sep="_") %>%
+  mutate(
+     Congruency = Congruency %>%
+      recode(
+        "0" = "Congruent",
+        "1" = "Incongruent",
+        "2" = "Neutral",
+        "3" = "Ambivalent"
+      ) %>% factor(levels = c("Ambivalent","Congruent","Incongruent","Neutral")),
+    Subject = dataset %>% factor,
+    Value = Value %>% as.numeric
+  ) %>%
+  select(Subject,everything(),-dataset) %>%
+  group_by(Parameter) %>%
+  mutate(zValue = Value %>% scale) %>%
+  ungroup %>%
+  arrange(Subject,Parameter,Congruency)
+
+critFit <- dfDiff01Sim %>%
+  distinct(Subject,fit) %$%
+  quantile(fit,.05)
+
+dfDiff01Sim %>%
+  distinct(Subject,fit) %>%
+  ggplot(aes(x = fit)) +
+  geom_histogram(binwidth = .01) +
+  geom_vline(aes(xintercept=.05),colour="red")
+
 
 ```
+
+```{r comp fit, options}
+
+dfDiff01 %>%
+  distinct(Subject,fit) %>%
+  filter(fit <= critFit)
+
+dfDiff01 %>%
+  distinct(Subject,fit) %>%
+  ggplot(aes(x = fit)) +
+  geom_histogram(binwidth = .01) +
+  geom_vline(aes(xintercept=critFit),colour="red")
+
+```
+
+Since our comparison does not show any subjects below the critical fit boundary, we should be able to assume that our models with somewhat decently.
+Note however, that the distribution of fit looks quite uniform for the simulated data.
+This is better for our real data, although we have one quite low "outlier", which we reasonably should exclude.
+
 
 #########################
 ### Parameter Analyses
 #########################
 
-##########################################################################
-#### First model - with estimates for inter-trial z and t0 variability
-##########################################################################
+#################
+#### Free Model
+#################
+
 
 ```{r model, options}
 
 afex::set_effects_contrasts()
-
 lapply(
   c("d","t0","v"),
   function(x) {
@@ -1196,6 +1331,15 @@ lapply(
 ```{r emmeans & contrasts, options}
 
 Fit01_d %>%
+  emmeans(~Congruency)
+
+Fit01_t0 %>%
+  emmeans(~Congruency)
+
+Fit01_v %>%
+  emmeans(~Congruency)
+
+Fit01_d %>%
   emmeans(~Congruency) %>%
   contrast(method="trt.vs.ctrl",adjust="none")
 
@@ -1207,276 +1351,128 @@ Fit01_v %>%
   emmeans(~Congruency) %>%
   contrast(method="trt.vs.ctrl",adjust="none")
 
-```
-
-
-```{r ANOVA, options}
-
-dfDiff01 %>%
-  filter(Parameter == "d") %>%
-  aov(
-    Value ~ Congruency,
-    data=.
-  ) %>% summary
-
-dfDiff01 %>%
-  filter(Parameter == "t0") %>%
-  aov(
-    Value ~ Congruency,
-    data=.
-  ) %>% summary
-
-dfDiff01 %>%
-  filter(Parameter == "v") %>%
-  aov(
-    Value ~ Congruency,
-    data=.
-  ) %>% summary
-
-```
-
-#########################################################
-#### Second Model - fixed inter trial variabilities to 0
-#########################################################
-
-```{r model, options}
-
-afex::set_effects_contrasts()
-lapply(
-  c("d","t0","v"),
-  function(x) {
-    assign(paste0("Fit02_",x),
-      dfDiff02 %>%
-        filter(Inclusion) %>%
-        filter(Parameter == x) %>%
-        mixed(
-          Value ~ Congruency + (1|Subject),
-          data = .,
-          method = "KR",
-          test_intercept = TRUE
-        ),
-      envir = globalenv()
-    )
-  }
-)
-
-```
-
-```{r emmeans & contrasts, options}
-
-Fit02_d %>%
-  emmeans(~Congruency)
-
-Fit02_t0 %>%
-  emmeans(~Congruency)
-
-Fit02_v %>%
-  emmeans(~Congruency)
-
-Fit02_d %>%
-  emmeans(~Congruency) %>%
-  contrast(method="trt.vs.ctrl",adjust="none")
-
-Fit02_t0 %>%
-  emmeans(~Congruency) %>%
-  contrast(method="trt.vs.ctrl",adjust="none")
-
-Fit02_v %>%
-  emmeans(~Congruency) %>%
-  contrast(method="trt.vs.ctrl",adjust="none")
-
-Fit02_d %>%
+Fit01_d %>%
   emmeans(~Congruency) %>%
   contrast(method="pairwise",include = c("Congruent","Incongruent"),adjust="none")
 
-Fit02_t0 %>%
+Fit01_t0 %>%
   emmeans(~Congruency) %>%
   contrast(method="pairwise",include = c("Congruent","Incongruent"),adjust="none")
 
-Fit02_v %>%
+Fit01_v %>%
   emmeans(~Congruency) %>%
   contrast(method="pairwise",include = c("Congruent","Incongruent"),adjust="none")
 
 ```
 
+contrast                 estimate      SE  df t.ratio p.value
+Congruent - Ambivalent   -0.00994 0.00341 225 -2.917  0.0039
 
-```{r ANOVA, options}
+contrast                estimate      SE  df t.ratio p.value
+Congruent - Incongruent  -0.0118 0.00341 225 -3.468  0.0006 
 
-dfDiff02 %>%
-  filter(Inclusion) %>%
-  filter(Parameter == "d") %>%
-  aov(
-    Value ~ Congruency,
-    data=.
-  ) %>% summary
+#############
+#### Graphs
+#############
 
-dfDiff02 %>%
-  filter(Inclusion) %>%
-  filter(Parameter == "t0") %>%
-  aov(
-    Value ~ Congruency,
-    data=.
-  ) %>% summary
+```{r diff graphs, options}
 
-dfDiff02 %>%
-  filter(Inclusion) %>%
-  filter(Parameter == "v") %>%
-  aov(
-    Value ~ Congruency,
-    data=.
-  ) %>% summary
-
-```
-
-
-
-
-##################
-### STAN Example
-##################
-
-```{r STAN, options}
-
-# options(mc.cores = parallel::detectCores())
-
-pkgbuild::check_rtools(debug=TRUE)
-
-rstan_options(auto_write = TRUE)
-# 
-# cat("\nCXX14FLAGS=-O3 -march=native",
-#     "CXX14 = g++ -m$(WIN) -std=c++1y",
-#     "CXX11FLAGS=-O3 -march=native",
-#     # file = M,
-#     sep = "\n", append = TRUE)
+# union_all(
+#   Fit01_d %>%
+#   emmeans(~Congruency) %>%
+#     as_tibble %>%
+#     mutate(Parameter = "d"),
+#   union_all(
+#       Fit01_v %>%
+#   emmeans(~Congruency) %>%
+#     as_tibble %>%
+#     mutate(Parameter = "v"),
+#     Fit01_t0 %>%
+#   emmeans(~Congruency) %>%
+#     as_tibble %>%
+#     mutate(Parameter = "t0")
+#   )
+# ) %>%
+#   mutate(Parameter = Parameter %>% factor(levels = c("d","v","t0"))) %>%
+#   ggplot(aes(x = Congruency, y = emmean, fill = Congruency, ymin = lower.CL, ymax = upper.CL)) +
+#   geom_col(position=position_dodge2()) +
+#   geom_errorbar(position = position_dodge2(),colour="black") +
+#   facet_wrap(~Parameter,strip.position = "bottom",scales = "free_y") +
+#   labs(y = "Estimated Means", x = "Parameter") +
+#   theme(
+#     strip.placement = "outside",
+#     strip.background = element_blank(),
+#     axis.text.x = element_blank(),
+#     axis.ticks.x = element_blank(),
+#     plot.margin = unit(c(1.5,0.5,0.5,0.5),"cm")
+#   )
 
 
-# Sys.setenv(LOCAL_CPPFLAGS = '-march=native')
 
-```
 
-```{r 8 Schools, options}
-
-# model file
-
-"data {
-  int<lower=0> J;
-  real y[J];
-  real<lower=0> sigma[J];
-}
-parameters {
-  real mu;
-  real<lower=0> tau;
-  vector[J] eta;
-}
-transformed parameters {
-  vector[J] theta = mu + tau * eta;
-}
-model {
-  target += normal_lpdf(eta | 0, 1);
-  target += normal_lpdf(y | theta, sigma);
-}
-" %>%
-  cat(file="STAN/8schools.stan")
-
-# data list
-
-schools_dat <- list(
-  J = 8,
-  y = c(28,8,-3,7,-1,1,18,12),
-  sigma = c(15,10,16,11,9,11,10,18)
+Fit01_d %>%
+  emmeans(~Congruency) %>%
+  as_tibble %>%
+  mutate(Parameter = "d") %>%
+  ggplot(aes(x = Parameter, y = emmean, fill = Congruency, ymin = lower.CL, ymax = upper.CL)) +
+  geom_col(position=position_dodge2()) +
+  geom_errorbar(position = position_dodge2(padding = .6),colour="black",size=.5) +
+  labs(y = "Estimated Means") +
+  theme(
+    plot.margin = unit(c(1,0,0,0),"cm")
   )
 
-```
-
-```{r running STAN, options}
-
-fit <- stan(
-  "STAN/8schools.stan",
-  data = schools_dat,
-  iter = 2000,
-  warmup = 1000,
-  chains = 4,
-  cores=1,
-  thin = 1,
-  init = "random",
-  verbose = TRUE
+Fit01_v %>%
+  emmeans(~Congruency) %>%
+  as_tibble %>%
+  mutate(Parameter = "v") %>%
+  ggplot(aes(x = Parameter, y = emmean, fill = Congruency, ymin = lower.CL, ymax = upper.CL)) +
+  geom_col(position=position_dodge2()) +
+  geom_errorbar(position = position_dodge2(padding = .6),colour="black",size=.5) +
+  labs(y = "Estimated Means") +
+  theme(
+    plot.margin = unit(c(1,0,0,0),"cm")
   )
 
-```
+Fit01_t0 %>%
+  emmeans(~Congruency) %>%
+  as_tibble %>%
+  mutate(Parameter = "t0") %>%
+  ggplot(aes(x = Parameter, y = emmean, fill = Congruency, ymin = lower.CL, ymax = upper.CL)) +
+  geom_col(position=position_dodge2()) +
+  geom_errorbar(position = position_dodge2(padding = .6),colour="black",size=.5) +
+  labs(y = "Estimated Means") +
+  theme(
+    plot.margin = unit(c(1,0,0,0),"cm")
+  )
 
-```{r label, options}
 
-print(fit)
-
-plot(fit)
-
-pairs(fit, pars = c("mu","tau", "lp__")) # lp__ is the log-posterior
-
-la <- rstan::extract(fit, permuted=TRUE)
-
-mu <- la$mu
-
-a <- rstan::extract(fit, permuted=FALSE)
-
-a2 <- as.array(fit)
-
-m <- as.matrix(fit)
-
-d <- as.data.frame(fit)
 
 ```
+
+
 
 ####################
-### STAN Diffusion
+#### Exploratory
 ####################
 
-There are packages handling wiener distribution sampling (RWiener, in combination with brms and stan), but it seems that these implementations do not allow for estimation of differences in speed of response execution (d = tlower - tupper; Voss, Voss, & Klauer, 2010).
 
-I'm not very sure how to actually implement this manually..
+```{r congruency contrasts, options}
 
-Further, Stan returns the first passage time of the accumulation process over the upper boundary only. To get the result for the lower boundary, use wiener(y|α,τ,1−β,−δ) For more details, see the appendix of Vandekerckhove and Wabersich (2014).
+Fit01_d %>%
+  emmeans(~Congruency) %>%
+  contrast(method="pairwise")
 
+Fit01_t0 %>%
+  emmeans(~Congruency) %>%
+  contrast(method="pairwise")
 
-```{r model, options}
-
-"data {
-  int<lower=1> S; // Subjects
-  real y[S];
-  real<lower=0> sigma[S];
-}
-parameters {
-  real alpha; //
-  real delta[S]; // drift rate
-  vector[S] eta;
-}
-transformed parameters {
-  real bias = alpha / 2;
-  vector[S] theta = mu + tau * eta;
-}
-model {
-  target += normal_lpdf(eta | 0, 1);
-  target += wiener_lpdf(y | alpha, tau, beta, delta);
-}
-" %>%
-  cat(file="STAN/diff.stan")
-
+Fit01_v %>%
+  emmeans(~Congruency) %>%
+  contrast(method="pairwise")
 
 
 ```
 
-
-
-
-
-
-
-
-
-
-
-
-#####################
-#### brms + RWiener
-#####################
-
+No other significant contrasts.
 
